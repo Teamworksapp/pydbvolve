@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+
+__VERSION__ = (1, 0, 0)
+__VERSION_STRING__ = '.'.join(str(v) for v in __VERSION__)
+
+
+import sys
+import argparse
+import traceback
+
+import pydbvolve
+
+
+if __name__ == '__main__':
+    def init_args():
+        """Initialize argument parser. Returns argparse.ArgumentParser instance."""
+        
+        description = "Apply migrations to a database. "
+        description += "Be careful!! This script will give you all the rope you need to hang yourself! "
+        description += "Make sure that you have tested backup and recovery procedures in place before using this script. "
+        description += "Migration scripts are matched by version. Only SQL (.sql) and Python (.py) migration scripts are supported."
+        
+        parser = argparse.ArgumentParser(description=description)
+        parser.add_argument("--config",         dest="configFileName",    metavar="CONF_FILE",  required=True,  help="Config code file")
+        parser.add_argument("--force",          dest="sequential",        action="store_false",                 help="Apply version directly (no sequential iteration through versions)", default=True)
+        parser.add_argument("--verbose",        dest="verbose",           action="store_true",                  help="Verbose mode (Echo log to screen; Show tracebacks.)", default=False)
+        parser.add_argument("--libversion",     dest="libversion",        action="store_true",                  help="Print the library version and exit", default=False)
+        parser.add_argument("--version",        dest="version",           action="store_true",                  help="Print the main script version and exit", default=False)
+        mgroup = parser.add_mutually_exclusive_group(required=True)
+        mgroup.add_argument("--baseline",       dest="baselineVersion",   metavar="B_VERSION",                  help="Set baseline version in migration table")
+        mgroup.add_argument("--upgrade",        dest="upgradeVersion",    metavar="U_VERSION",                  help="Sequential upgrade to version")
+        mgroup.add_argument("--upgrade-latest", dest="upgradeLatest",     action="store_true",                  help="Sequential upgrade to latest version")
+        mgroup.add_argument("--downgrade",      dest="downgradeVersion",  metavar="D_VERSION",                  help="Sequential downgrade to version")
+        mgroup.add_argument("--info",           dest="getInfo",           action="store_true",                  help="Get the current schema version information", default=False)
+        mgroup.add_argument("--migration-log",  dest="migrationLog",      action="store_true",                  help="Output migration log from database.", default=False)
+        mgroup.add_argument("--verify",         dest="verifyVersion",     metavar="V_VERSION",                  help="Verify the schema is at specified version")
+        
+        return parser
+    # End init_args
+
+
+    def main():
+        """Main function for command-line execution."""
+        parser = init_args()
+        try:
+            if '--libversion' in sys.argv:
+                print("pydbovlve module version {}".format(pydbvolve.__VERSION_STRING__))
+                return 0
+            
+            if '--version' in sys.argv:
+                print("version {}".format(__VERSION_STRING__))
+                return 0
+                
+            args = parser.parse_args()
+        except:
+            return -1
+        
+        if args.libversion:
+            print("pydbovlve module version {}".format(pydbvolve.__VERSION_STRING__))
+            return 0
+        
+        if args.version:
+            print("version {}".format(__VERSION_STRING__))
+            return 0
+        
+        if args.baselineVersion:
+            action = 'baseline'
+            version = args.baselineVersion
+        elif args.upgradeVersion:
+            action = 'upgrade'
+            version = args.upgradeVersion
+        elif args.upgradeLatest:
+            action = 'upgrade'
+            version = pydbvolve.LATEST_VERSION
+        elif args.downgradeVersion:
+            action = 'downgrade'
+            version = args.downgradeVersion
+        elif args.getInfo:
+            action = 'info'
+            version = 'current'
+        elif args.migrationLog:
+            action = 'log'
+            version = 'all'
+        else: #args.verifyVersion:
+            action = 'verify'
+            version = args.verifyVersion
+        
+        sequential = args.sequential
+        verbose = args.verbose
+        
+        rc = pydbvolve.run_migration(args.configFileName, action, version, sequential, verbose)
+        
+        return rc
+    # End main
+    
+    # Execute!
+    try:
+        rc = main()
+        if rc != 0:
+            print("Exiting with {}".format(rc), file=sys.stderr)
+        
+        sys.exit(rc)
+    except Exception as e:
+        print("ERROR:: Unhandled excaption {}: {}".format(type(e).__name__, e), file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(254)
+
+

@@ -1,0 +1,6 @@
+# Upgrade scripts should go here.
+# They should be named for the target version ie. 5.30.0_upgrades.sql
+# Scripts can be written using plain sql (no begin, end blocks) or Python files
+# SQL scripts should have a '.sql' extension and Python files should have a '.py' extension
+# Write your python scripts using Python3
+
