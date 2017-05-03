@@ -1,4 +1,4 @@
-#pydbvolve
+# pydbvolve
 pydbvolve is a stand-alone database migration tool written in **[Python 3](https://www.python.org/)** and incorporating these features:
 
 * Ability to run SQL scripts
@@ -15,15 +15,15 @@ pydbvolve is a stand-alone database migration tool written in **[Python 3](https
 
 ---
 
-##Purpose
+## Purpose
 
-###Problem
+### Problem
 
 Although many web frameworks have a migration tool built into them, there are times where the database transformations are not executed correctly. This often causes the developer to have to navigate a nest of classes and functions not normally used to stay within the paradigm of the ORM or other class structure that is the interface to the database. 
 
 There are other stand-alone migration tools available, but many of them are written in Java and would mean incorporating another language stack into either the web project or into the infrastructure stack. This may be undesirable given so many new web application are written using scripted languages (Python, Ruby) or Golang.
 
-###Solution
+### Solution
 
 Develop a database migration tool written in Python! Make this solution require the bare minimum of dependencies and make it easily deployable. Enter **pydbvolve**.
 
@@ -31,17 +31,17 @@ The only base dependency are that it runs via Python 3. The only database depend
 
 ---
 
-##Installation
+## Installation
 
 *TODO:* ~~pydbvolve can be installed from this repo or can be installed from [PyPI](https://pypi.python.org/pypi)~~
 
 It is up to the user to ensure that the appropriate database module(s) are installed for communication with the engine plus any other dependencies that are needed for the specific project or infrastructure.
 
-##Invocation
+## Invocation
 
 pydbvolve is a command-line tool that is meant to be integrated into development or DevOps as any other script would. It generally is quiet, preferring to use return codes over exceptions, but will use exceptions in extreme cases. It will write logs using Python logging module.
 
-###Syntax
+### Syntax
 
 ```
 pydbvolve [-h | --help] --config CONFIG_FILE [--force] [--version] [--libversion]
@@ -49,7 +49,7 @@ pydbvolve [-h | --help] --config CONFIG_FILE [--force] [--version] [--libversion
            --downgrade D_VERSION | --info | --migration-log | --verify V_VERSION)
 ```
 
-####Required Arguments
+#### Required Arguments
 
 **--config CONFIG_FILE**  
 Specify the configuration file to use.
@@ -71,7 +71,7 @@ Write known information about the current migration to stdout
 **--migration-log**  
 Write a plain-text report of all migrations to stdout
 
-####Optional Arguments
+#### Optional Arguments
 
 **--force**  
 Apply an out-of-order migration.  
@@ -82,7 +82,7 @@ Write CLI version to stdout
 **--libversion**  
 Write module version to stdout
 
-##Configration
+## Configration
 
 pydbvolve requires a configuration file. This configuration file adapts the program for your environment. This configuration file differs from others in that it is a Python 3 script as well. By writing the necessary functions, you can change defaults, protect database credentials and connect to whatever database you choose.
 
@@ -94,9 +94,9 @@ The configuration logic was designed this way to enable the config file to be an
 
 The structure use to hole the configuration values is an instance of **dict**. This _must not_ change.
 
-###Configuration Functions
+### Configuration Functions
 
-####Initial Configuration Functions
+#### Initial Configuration Functions
 
 | Function               | Return Type | Definition 
 | ---------------------- | ----------- | -----------
@@ -111,7 +111,7 @@ The structure use to hole the configuration values is an instance of **dict**. T
 | get_file_name_regex() | SRE_Pattern instance | Returns the regex that will parse the migration file names into the component information used for versioniing and file type determination. Default is re.compile('^([^\_]+)\_([^.]+).(sql\|py)$'). Config key is **filename_regex**. Config key is **filename_regex**
 | get_sql_statement_sep() | SRE_Pattern instance | Returns the regex that will separate individual SQL statements in a sql file. This is only used at runtime and not stored in the config, but it can be overridden. Default is re.compile('^\\s*--\\s*run\\s*$', flags=re.MULTILINE\|re.IGNORECASE)
 
-####Post-Initial Configuration Functions
+#### Post-Initial Configuration Functions
 
 This is a list of configuration function that rely on the completed initial configuration. These functions expect 1 parameter which will be the config dict.
 
@@ -127,7 +127,7 @@ This is a list of configuration function that rely on the completed initial conf
 | setup_log(config)         | dict     | Setup logging for run. Calls **set_logger_name**, **set_log_file_name** and **set_logger_level** to initialize the config. If **config['log_file_name']** has a value, **setup_file_logger** is called otherwise **setup_stream_logger** is called. Returns config.
 | close_log(config)         | None     | Flushes all log handlers and closes the logger instance.
 
-####Database Connectivity Functions
+#### Database Connectivity Functions
 
 | Function               | Return Type | Definition 
 | ---------------------- | ----------- | -----------
@@ -135,7 +135,7 @@ This is a list of configuration function that rely on the completed initial conf
 | get_db_user(config, credentials) | str | Returns the database username. Default is credentials.get('user', 'unknown'). This is used for logging.
 | get_db_connection(config, credentials) | database connection class instance | Uses the values in the credentials dict to create a connection to the database.
 
-####Trigger Functions
+#### Trigger Functions
 
 | Function               | Return Type | Definition 
 | ---------------------- | ----------- | -----------
@@ -148,7 +148,7 @@ This is a list of configuration function that rely on the completed initial conf
 
 ---
 
-###Database Operations
+### Database Operations
 
 pydbvolve makes heavy use of context managers and **expects** that any database connection and cursor class support being used as a context manager. If your database module does not support context managers, please write subclasses as necessary to support the instances being used like 
 
@@ -158,13 +158,13 @@ with dbmodule.connect(**params) as conn:
         cur.execute(sqlstuff)
 ```
 
-####SQLite Considerations
+#### SQLite Considerations
 
 See the snippets/sqlite.py file for subclasses and functions that should be used when your target database to migrate is a sqlite3 database.
 
 ---
 
-###Migration Table
+### Migration Table
 
 pydbvolve doesn't care about what happens in the migration files. Even if they contained selects, the results would not be fetched. However, for pydbvolve to properly interact with the database for migration table operations, all cursors **must** return rows that are real Python 3 dict instances. If they do not return dict instances, proper operation cannot be ensured.
 
@@ -176,9 +176,9 @@ The migration table serves three purposes:
 
 ---
 
-##Migrations
+## Migrations
 
-###Transactions
+### Transactions
 
 pydbovlve will run migrations on a script-by-script basis in an all-or-nothing fashion. This means that commits will be made after each script run, but no commit will be implicitly be run during a script execution. If commits are run during a script execution it is the responsibility of the script author that those are necessary and are handled properly in any kind of rollback operation.
 
@@ -188,7 +188,7 @@ If your database connection class has an autocommit setting, it should be set to
 
 When a migration script completes, the migration table will be updated with that script's information and a commit will be executed for all of the changes. This will allow for selective downgrades if, for example, three upgrade scripts were applied, only the first two succeeded and the downgrade operation only means to undo the second script's changes.
 
-###Scripts
+### Scripts
 
 Migration scripts can be SQL files or python files if the transforms are sufficiently complex. Please ensure that **any** script file has an empty line at the end. It will ensure proper parsing or compilation.
 
@@ -243,7 +243,7 @@ r3.10.0_downgrade_from 3_11.sql
 
 Because the target version from the left side of the string is the resulting database version of the 3.11 undo.
 
-####Script Execution
+#### Script Execution
 
 pydbvolve will gather all migration files from the upgrade or downgrade directory (based on the operation) matching files using the filename_regex from the config and will get the sortable version from the file name. The sortable version is a tuple of integers (not strings of digits) and sort the files according to that. This is done so that version 1.11 follows 1.10 instead of 1.1.
 
@@ -253,11 +253,11 @@ A downgrade cannot be performed if there is no current migration. If a baseline 
 
 Script files for the current version as well as the target version **must** exist in the migration action directory. Only baseline versions are allowed to not be actual script files since a baseline merely serves as an origin marker.
 
-###Forcing a migration
+### Forcing a migration
 
 By default pydbvolve will attempt to apply scripts in sort-version order from current to target. However, there is the ability to force in a script that is out-of-order. Out-of-order application will only execute the target script based on its version string match and will not attempt to execute any other. Since this may break ordering based on the other scripts in migration action directories, it is up to the user to either manage the migration scripts or manually execute pydbvolve until it is in a state to run sequentially once more.
 
-###SQL Migrations
+### SQL Migrations
 
 SQL migrations are merely files of SQL statements for the target database engine. When running a SQL script, pydbvolve will attempt to read and parse the file into individual statements to run. Since SQL is a complex language with extensions and syntax that differs from engine to engine, it is beyond the scope of pydbvolve to be a SQL token parser. Instead it relies on the user to add SQL statement separators immediately after statements to run. By default, this separator is the text **-- run** and must be on its own line.
 
@@ -271,9 +271,11 @@ update foo
    set quatloos = kelvins * splunks - feens;
 -- run
 ```
+
 This will allow the parser to discreetly get the alter and update statements and execute them separately. Running a single statement is a requirement for some Python database modules.
 
-###Python Migrations
+### Python Migrations
+
 When the transformations are sufficiently complex or rely on some external input or application, a Python script may be necessary. Python migration scripts should be coded for execution via Python 3.
 
 A Python script file is just a python file of functions required to perform the transformation. pydbvolve will load these Python 3 scripts as modules. Python migration scripts should contain a function with the following definition as the entry point:
@@ -302,15 +304,17 @@ Tuple used for sorting
 The log writer is defined as follows:
 
 ```python
-write_log(config, message, force_visibility=False)
+write_log(config, message)
 ```
+
 If force_visibility is set to True, then the message is copied to stdout. Pass in the config variable for the config parameter and message is the string you wish to write to the log.
 
 The body of the **run_migration** function will now execute self-contained in the module with only config and migration as the links from pydbvolve.
 
 ---
 
-##Best Practices
+## Best Practices
+
 Make sure that autocommit on the connection class instance is set to False.
 
 All upgrade migrations should have downgrade migrations.
@@ -347,7 +351,7 @@ pydbvolve --config my_config.conf --upgrade-latest || do-panic-stuff
 
 ---
 
-##Sample Config File
+## Sample Config File
 
 This config file was designed to operate with sqlite3 databases. The sqlite3 database does not use schemata. So the get_migration_table_schema() call just returns an empty string.
 
@@ -452,7 +456,7 @@ def get_db_connection(config, credentials):
 # End get_db_connection
 ```
 
-##Sample Python migration
+## Sample Python migration
 
 This is a sample migration file designed to run against a sqlite3 database (note the **?** positional argument token).
 
@@ -507,9 +511,9 @@ def run_migration(config, migration):
 
 ---
 
-#Advanced
+# Advanced
 
-##Embedding
+## Embedding
 
 pydbvolve is distributed as a command-line tool, but that tool is just a CLI to the pydbvolve module. This module can be imported into any Python 3 project that needs database migration functionality.
 
@@ -546,7 +550,7 @@ The version of the module can be checked against the tuple **pydbvolve.\_\_VERSI
 
 ---
 
-##Configuration
+## Configuration
 
 The config file is itself a Python 3 file of functions. This file will be read, compiled, and executed in the memory-space of the base process. This is the mechanism for overriding the default behavior of the program. If you import pydbovlve like
 
