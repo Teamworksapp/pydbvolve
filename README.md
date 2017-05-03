@@ -531,7 +531,7 @@ A str instance that is the migration action. Valid values are:
 
 | action                 | Corresponding CLI Argument
 | ---------------------- | -------------------------------
-| 'upgrade'              | --upgrade and --upgrade-latest 
+| 'upgrade'              | --upgrade, --upgrade-latest 
 | 'downgrade'            | --downgrade
 | 'baseline'             | --baseline
 | 'info'                 | --info
