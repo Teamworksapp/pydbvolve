@@ -16,9 +16,10 @@ if __name__ == '__main__':
         """Initialize argument parser. Returns argparse.ArgumentParser instance."""
         
         description = "Apply migrations to a database. "
-        description += "Be careful!! This script will give you all the rope you need to hang yourself! "
-        description += "Make sure that you have tested backup and recovery procedures in place before using this script. "
-        description += "Migration scripts are matched by version. Only SQL (.sql) and Python (.py) migration scripts are supported."
+        description += "Be careful!! This script will happily run *any* migration code you are able to with "
+        description += "your database user's permissions! Make sure that you have tested backup and recovery "
+        description += "procedures in place before using this script. Migration scripts are matched by version. "
+        description += "Only SQL (.sql) and Python (.py) migration scripts are supported."
         
         parser = argparse.ArgumentParser(description=description)
         parser.add_argument("--config",         dest="configFileName",    metavar="CONF_FILE",  required=True,  help="Config code file")
