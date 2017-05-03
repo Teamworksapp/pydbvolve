@@ -23,7 +23,7 @@ create index ix01_users on users(username);
 
 
 def add_default_user(conn):
-    username = 'teamworks'
+    username = 'pydbvolve'
     salt = bcrypt.gensalt()
     hashpw = bcrypt.hashpw(salt, salt)
     sql = """

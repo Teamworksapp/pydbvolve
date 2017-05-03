@@ -30,6 +30,6 @@ create table school
 );
 --run
 
-insert into school (id, name, short_name) values (1, 'Teamworks Corporate', 'TW-CORP');
+insert into school (id, name, short_name) values (1, 'High-Class University', 'HCU');
 --run
 
