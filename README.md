@@ -315,27 +315,23 @@ The body of the **run_migration** function will now execute self-contained in th
 
 ## Best Practices
 
-Make sure that autocommit on the connection class instance is set to False.
-
-All upgrade migrations should have downgrade migrations.
-
-Set the VERSION part of migration file names for the version the database will be after the script has run.
-
-Make sure that the SQL statement separator follows each discrete statement in your SQL migration files.
-
-Set a baseline before you start
+* Make sure that autocommit on the connection class instance is set to False.
+* All upgrade migrations should have downgrade migrations.
+* Set the VERSION part of migration file names for the version the database will be after the script has run.
+* Make sure that the SQL statement separator follows each discrete statement in your SQL migration files.
+* Set a baseline before you start
 
 ```bash
 pydbvolve --config my_config.conf --baseline r1.0.0
 ```
 
-Always check your return codes!
+* Always check your return codes!
 
 ```bash
 pydbvolve --config my_config.conf --upgrade r10.20.30 && run-version-tests || send-panic-email
 ```
 
-Use verfiy in your startup process
+* Use verfiy in your startup process
 
 ```bash
 pydbvolve --config my_config.conf --verify ${REQUIRED_DB_VERSION} && run-app-startup-script
