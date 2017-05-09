@@ -1,4 +1,7 @@
+[![Build Status](https://travis-ci.org/Teamworksapp/pydbvolve.svg?branch=master)](https://travis-ci.org/Teamworksapp/pydbvolve)
+
 # pydbvolve
+
 pydbvolve is a stand-alone database migration tool written in **[Python 3](https://www.python.org/)** and incorporating these features:
 
 * Ability to run SQL scripts
