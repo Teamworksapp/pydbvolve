@@ -36,7 +36,7 @@ The only base dependency are that it runs via Python 3. The only database depend
 
 ## Installation
 
-*TODO:* ~~pydbvolve can be installed from this repo or can be installed from [PyPI](https://pypi.python.org/pypi)~~
+pydbvolve can be installed from this repo or can be installed from [PyPI](https://pypi.python.org/pypi/pydbvolve)
 
 It is up to the user to ensure that the appropriate database module(s) are installed for communication with the engine plus any other dependencies that are needed for the specific project or infrastructure.
 
