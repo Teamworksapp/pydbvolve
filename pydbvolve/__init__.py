@@ -2,7 +2,7 @@
 #  All recurds returned by database calls should be of dict type or behave exactly like dict!!
 # ====================================
 
-__VERSION__ = (1, 0, 0)
+__VERSION__ = (1, 0, 1)
 __VERSION_STRING__ = '.'.join(str(v) for v in __VERSION__)
 
 
