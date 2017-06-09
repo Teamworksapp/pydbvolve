@@ -1,0 +1,9 @@
+# This is base migration directory.
+#
+# There are two subdirectories: upgrades, downgrades
+# Place all upgrade scripts in upgrades directory
+# Place all downgrade scripts in downgrades directory
+# Upgrade and downgrade script names should be named for the destination version
+# For instance if you want to upgrade to 10.1.0 from 10.0.0, name the upgrade script upgrades/10.1.0_upgrade.sql
+# The accompanying downgrade script should be named downgrades/10.0.0_downgrade.sql and should undo the 10.1.0_upgrade.sql operations.
+
