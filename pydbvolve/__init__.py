@@ -2,7 +2,7 @@
 #  All recurds returned by database calls should be of dict type or behave exactly like dict!!
 # ====================================
 
-__VERSION__ = (1, 0, 0)
+__VERSION__ = (1, 0, 1)
 __VERSION_STRING__ = '.'.join(str(v) for v in __VERSION__)
 
 
@@ -807,7 +807,8 @@ def run_python_migration(config, migration):
     config['migration_exception'] = MigrationError
     
     write_log(config, 'Loading python migration "{}"'.format(migration['filename']))
-    pymigration = import_arbitrary(migration['filename'], 'pv_mg_' + migration['version'])
+    migration_module_name = 'pv_mg_' + migration['version']
+    pymigration = import_arbitrary(migration['filename'], migration_module_name)
     
     if hasattr(pymigration, 'run_migration'):
         write_log(config, 'Running python migration (run_migration() call)'.format(migration['filename']))
@@ -815,6 +816,13 @@ def run_python_migration(config, migration):
     else:
         write_log(config, "Migration was run at import-time")
         rc = True
+    
+    # unload migration
+    # This might be technically unnecessary, but I want to be explicit about this
+    # in case behavior changes in future
+    if migration_module_name in sys.modules:
+        del sys.modules[migration_module_name]
+    del pymigration
     
     return rc
 # End run_python_migration

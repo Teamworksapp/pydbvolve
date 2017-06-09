@@ -6,7 +6,7 @@ setup(name='pydbvolve',
       url="https://github.com/Teamworksapp/pydbvolve",
       author="Teamworksapp",
       author_email="teamworks_pypi@teamworks.com",
-      version='1.0.0',
+      version='1.0.1',
       license='MIT',
       classifiers=[
         # How mature is this project? Common values are
