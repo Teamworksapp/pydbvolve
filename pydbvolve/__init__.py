@@ -607,9 +607,9 @@ update {}"{}"
 # End clear_baseline
 
 
-def get_version(config, version):
+def get_version(config, version, exclude_baseline=True):
     """
-    Return a dict corresponding to a specific version 
+    Return a dict corresponding to a specific version.   
     """
     
     conn = config['conn']
@@ -620,11 +620,14 @@ def get_version(config, version):
 select * 
   from {}"{}"
  where version = {}
+   {}
  order 
     by applied_ts desc;
 """.format(config.get('migration_table_schema', ''), 
            config['migration_table_name'],
-           config['positional_variable_marker'])
+           config['positional_variable_marker'],
+           "and migration_action != 'baseline'" if exclude_baseline else '')
+            
             cur.execute(sql, (version,))
             res = cur.fetchone()
             if res is None:
@@ -762,7 +765,10 @@ def set_baseline(config):
             conn.rollback()
             return 0    # Exit with no error
         else:
-            write_log(config, "Setting baseline at version {}".format(config['version']))
+            msg = "Setting baseline at version {}".format(config['version'])
+            if config.get('chatty'):
+                print(msg)
+            write_log(config, msg)
             current = get_current(config) # We don't want to overwrite an existing current record if we're retroactively baselining
             addOK = add_migration_record(config, {}, baseline=1, current=(0 if bool(current) else 1))
     except Exception as e:

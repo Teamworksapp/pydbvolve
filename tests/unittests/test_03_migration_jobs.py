@@ -1,10 +1,9 @@
-import os
-import sys
 import sqlite3
-
 import os
 import sys
 import importlib
+import re
+from io import StringIO
 
 # Set path to force the import of the local module
 sys.path.insert(1, os.path.abspath('.'))
@@ -679,8 +678,6 @@ def test_20_downgrade_without_upgrade(capsys):
     except:
         pass
     
-    from io import StringIO
-    
     with capsys.disabled():
         try:
             stderr_save = sys.stderr
@@ -695,5 +692,75 @@ def test_20_downgrade_without_upgrade(capsys):
     
     os.unlink(TEST_DB_FILE)
 # End test_18_bad_upgrade
+
+
+def test_21_upgrade_baseline_current(capsys):
+    """Verify baseline-current and baseline-info and get_version()"""
+    try:
+        os.unlink(TEST_DB_FILE)
+    except:
+        pass
+    
+    config = pydbvolve.initialize(TEST_CONFIG_FILE, 'upgrade', 'r1.1.0', True, False)
+    assert (config is not None)
+    
+    rc = pydbvolve.run_migration(TEST_CONFIG_FILE, 'upgrade', pydbvolve.LATEST_VERSION, True, False)
+    assert (rc == 0)
+    
+    rc = pydbvolve.run_migration(TEST_CONFIG_FILE, 'baseline', pydbvolve.CURRENT_VERSION, True, False)
+    assert (rc == 0)
+    
+    curr = pydbvolve.get_current(config)
+    assert curr is not None
+    base = pydbvolve.get_baseline(config)
+    assert base is not None
+    assert curr['version'] == base['version']
+    
+    os.unlink(TEST_DB_FILE)
+# End test_21_upgrade_baseline_current
+
+
+def test_22_downgrade_baseline(capsys):
+    """Verify downgrade-baseline"""
+    try:
+        os.unlink(TEST_DB_FILE)
+    except:
+        pass
+
+    config = pydbvolve.initialize(TEST_CONFIG_FILE, 'upgrade', 'r1.1.0', True, False)
+    assert (config is not None)
+
+    rc = pydbvolve.run_migration(TEST_CONFIG_FILE, 'upgrade', 'r1.2.9', True, False, chatty=False)
+    assert (rc == 0)
+    
+    rc = pydbvolve.run_migration(TEST_CONFIG_FILE, 'baseline', pydbvolve.CURRENT_VERSION, True, False)
+    assert (rc == 0)
+    
+    curr = pydbvolve.get_current(config)
+    assert curr is not None
+    base = pydbvolve.get_current(config)
+    assert curr is not None
+    assert curr['version'] == 'r1.2.9'
+    assert curr['version'] == base['version']
+
+    rc = pydbvolve.run_migration(TEST_CONFIG_FILE, 'upgrade', pydbvolve.LATEST_VERSION, True, False)
+    assert (rc == 0)
+
+    curr = pydbvolve.get_current(config)
+    assert curr is not None
+    assert curr['version'] != 'r1.2.9'
+    
+    rc = pydbvolve.run_migration(TEST_CONFIG_FILE, 'downgrade', pydbvolve.BASELINE_VERSION, True, False)
+    assert (rc == 0)
+
+    curr = pydbvolve.get_current(config)
+    assert curr is not None
+    assert curr['version'] == 'r1.2.9'
+
+    os.unlink(TEST_DB_FILE)
+
+# End test_21_upgrade_baseline_current
+
+
 
 
