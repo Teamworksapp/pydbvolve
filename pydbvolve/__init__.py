@@ -2,7 +2,7 @@
 #  All recurds returned by database calls should be of dict type or behave exactly like dict!!
 # ====================================
 
-__VERSION__ = (1, 0, 1)
+__VERSION__ = (1, 0, 2)
 __VERSION_STRING__ = '.'.join(str(v) for v in __VERSION__)
 
 
@@ -29,6 +29,8 @@ VALID_COLUMNS = [
 ]
 VALID_ACTIONS = {'upgrade', 'downgrade', 'baseline', 'info', 'verify', 'log'}
 LATEST_VERSION = '\x00LATEST\x00'
+CURRENT_VERSION = '\x00CURRENT\x00'
+BASELINE_VERSION = '\x00BASELINE\x00'
 
 LOG_FORMAT = '%(asctime)s %(levelname)s %(migration_user)s: %(message)s'
 LOG_ECHO_FORMAT = '%(asctime)s: %(message)s'
@@ -131,53 +133,53 @@ def get_database_user(config, credentials):
 # End get_database_user
 
 
-def get_base_dir():
+def get_base_dir(config_file_path):
     """
     Returns the base directory path. Default is './pydbvolve'.
     Overide this function in your config file to set a custom directory.
     """
     
-    return os.path.join('.', 'pydbvolve')
+    return os.path.join(os.path.dirname(config_file_path), 'pydbvolve')
 # End get_base_dir
 
 
-def get_migration_base_dir():
+def get_migration_base_dir(base_dir):
     """
     Returns the base directory for the migrations. Default is get_base_dir() + '/migrations'.
     Overide this function in your config file to set a custom directory.
     """
     
-    return os.path.join(get_base_dir(), "migrations")
+    return os.path.join(base_dir, "migrations")
 # End get_migration_dir
 
 
-def get_migration_upgrade_dir():
+def get_migration_upgrade_dir(migration_base_dir):
     """
     Returns the base directory for the migrations. Default is get_migration_base_dir() + '/upgrades'.
     Overide this function in your config file to set a custom directory.
     """
     
-    return os.path.join(get_migration_base_dir(), "upgrades")
+    return os.path.join(migration_base_dir, "upgrades")
 # End get_migration_upgrade_dir
 
 
-def get_migration_downgrade_dir():
+def get_migration_downgrade_dir(migration_base_dir):
     """
     Returns the base directory for the migrations. Default is get_migration_base_dir() + '/downgrades'.
     Overide this function in your config file to set a custom directory.
     """
     
-    return os.path.join(get_migration_base_dir(), "downgrades")
+    return os.path.join(migration_base_dir, "downgrades")
 # End get_migration_downgrade_dir
 
 
-def get_log_dir():
+def get_log_dir(base_dir):
     """
     Returns the base directory for the migrations. Default is get_base_dir() + '/logs'.
     Overide this function in your config file to set a custom directory.
     """
     
-    return os.path.join(get_base_dir(), "logs")
+    return os.path.join(base_dir, "logs")
 # End get_log_dir
 
 
@@ -222,6 +224,10 @@ def set_log_file_name(config):
     version = config['version']
     if version == LATEST_VERSION:
         version = 'latest'
+    elif version == CURRENT_VERSION:
+        version = 'current'
+    elif version == BASELINE_VERSION:
+        version = 'baseline'
     
     config['log_file_name'] = os.path.join(config.get('log_dir', '.'), '.'.join((version.replace(' ', '_'), config['migration_action'].replace(' ', '_'), dt.now().strftime('%Y-%m-%d_%H:%M:%S'), 'log')))
     
@@ -359,6 +365,9 @@ def write_log(config, message, level=None):
     log = config.get('logger')
     if log:
         log.log((level or config.get('log_level', logging.INFO)), message, extra=config)
+    else:
+        out = sys.stderr if level == logging.ERROR else sys.stdout
+        print(message, file=out)
 # End write_log
 
 
@@ -429,6 +438,7 @@ def get_migration_filename_info(config, fileName):
         values = values[0]
     if len(values) == len(keys):
         info = dict(zip(keys, values))
+        info['filetype'] = info['filetype'].lower()
         info['filename'] = fileName
         info['sort_version'] = get_sort_version(config, info['version'])
         return info
@@ -447,7 +457,7 @@ def sort_migrations(config, migrations, reverse=False):
 # End sort_migrations
 
 
-def get_config():
+def run_config(config):
     """
     Build a config dict from the loaded config Python file.
     """
@@ -456,17 +466,20 @@ def get_config():
     if schema:
         schema = '"{}".'.format(schema)
     
-    config = {
-        'base_dir': get_base_dir(),
-        'migration_dir': get_migration_base_dir(),
-        'migration_upgrade_dir': get_migration_upgrade_dir(),
-        'migration_downgrade_dir': get_migration_downgrade_dir(),
-        'filename_regex': get_filename_regex(),
-        'log_dir': get_log_dir(),
+    base_dir = get_base_dir(config['config_file_path'])
+    migration_dir = get_migration_base_dir(base_dir)
+    
+    config.update({
+        'base_dir': base_dir,
+        'migration_dir': migration_dir,
+        'migration_upgrade_dir': get_migration_upgrade_dir(migration_dir),
+        'migration_downgrade_dir': get_migration_downgrade_dir(migration_dir),
+        'log_dir': get_log_dir(base_dir),
         'migration_table_schema': schema,
+        'filename_regex': get_filename_regex(),
         'migration_table_name': get_migration_table_name(),
         'positional_variable_marker': get_positional_variable_marker()
-    }
+    })
     
     return config
 # End get_config
@@ -594,6 +607,36 @@ update {}"{}"
 # End clear_baseline
 
 
+def get_version(config, version):
+    """
+    Return a dict corresponding to a specific version 
+    """
+    
+    conn = config['conn']
+    try:
+        write_log(config, "Getting migration record for version {}".format(version))
+        with conn.cursor() as cur:
+            sql = """
+select * 
+  from {}"{}"
+ where version = {}
+ order 
+    by applied_ts desc;
+""".format(config.get('migration_table_schema', ''), 
+           config['migration_table_name'],
+           config['positional_variable_marker'])
+            cur.execute(sql, (version,))
+            res = cur.fetchone()
+            if res is None:
+                res = {}
+    except Exception as e:
+        write_log(config, 'EXCEPTION:: getting version {}: {}'.format(version, e), level=logging.ERROR)
+        return {}
+
+    return res
+# End get_version
+
+
 def get_current(config):
     """
     Returns a dict representing the baseline migration record or empty dict if none exist.
@@ -703,8 +746,19 @@ def set_baseline(config):
     conn = config['conn']
     try:
         baseline = get_baseline(config)
+        if config['version'] == CURRENT_VERSION:
+            current = get_current(config)
+            if not (bool(current)):
+                write_log(config, "No current version is set. Have migrations been run?", level=logging.ERROR)
+                return 12
+            else:
+                config['version'] = current['version']
+        
         if bool(baseline) and (baseline['version'] == config['version']):
-            write_log(config, "Baseline version '{}' has already been set".format(config['version']))
+            msg = "Baseline version '{}' has already been set".format(config['version'])
+            if config.get('chatty'):
+                print(msg)
+            write_log(config, msg)
             conn.rollback()
             return 0    # Exit with no error
         else:
@@ -802,6 +856,10 @@ def run_python_migration(config, migration):
     
     # Expose the write_log func to the migration
     config['write_log'] = write_log
+    
+    # Expost pre/post statement JIC
+    config['pre_statement'] = pre_statement
+    config['post_statement'] = post_statement
     
     # Expose the base migration exception to the migration
     config['migration_exception'] = MigrationError
@@ -912,13 +970,21 @@ def run_migration_job(config, migrations, startIx, targetIx, incVal):
     
     i = 0
     totalMigrations = (abs(startIx - targetIx) + 1)
+    migration_type = 'downgrade' if incVal < 0 else 'upgrade'
     
     while(True):
         i += 1
 
         migration = migrations[startIx]
         try:
-            write_log(config, "Executing migration {}/{}: {}".format(i, totalMigrations, migration['version']))
+            # For comfort's sake, we're going to now be chatty here.
+            msg = "Executing {} migration {}/{}: {}".format(migration_type, 
+                                                            i, 
+                                                            totalMigrations, 
+                                                            os.path.basename(migration['filename']))
+            if config.get('chatty'):
+                print(msg)
+            write_log(config, msg)
             
             pre_script(config, migration)
             
@@ -1065,9 +1131,13 @@ def run_upgrade(config):
         if startIx is None:
             # This could happen if the files don't match the db.
             # set it like a force
+            write_log(config, "WARNING: Migration file versions are out of sync with the database migration table. This migration will be forced.")
             startIx = targetIx
         elif startIx == targetIx: # Sanity check!
-            write_log(config, "INFO: Database schema is already at this version (current = {}; target = {})".format(currentVersion['version'], targetVersion))
+            msg = "INFO: Database schema is already at this version (current = {}; target = {})".format(currentVersion['version'], targetVersion)
+            if config.get('chatty'):
+                print(msg)
+            write_log(config, msg)
             return 0
         else:
             # since we've found where we currently are, we need to inc by 1 to get the "real" starting point
@@ -1097,9 +1167,16 @@ def run_upgrade(config):
     else:
         if not rc:
             return 24
-    
+
+    currentVersion = get_current(config)
+    if currentVersion:
+        msg = "Current database version is: {}".format(currentVersion['version'])
+        if config.get('chatty'):
+            print(msg)
+        write_log(config, msg)
+
     return 0
-# End run_migration_job
+# End run_upgrade
 
 
 def run_downgrade(config):
@@ -1116,6 +1193,7 @@ def run_downgrade(config):
     currentVersion = get_current(config)
     baselineVersion = get_baseline(config)
     conn.rollback() # Clear any potential open transactions
+    targetVersion = config['version']
     
     migrations = setup_migrations(config)
     if not migrations:
@@ -1125,10 +1203,19 @@ def run_downgrade(config):
     if baselineVersion:
         baselineVersion['sort_version'] = get_sort_version(config, baselineVersion['version'])
     
-    targetIx = find_migration_file_version(config, migrations, config['version'])
+    if config['version'] == BASELINE_VERSION:
+        if not baselineVersion:
+            write_log(config, 
+                      "ERROR:: Cannot downgrade to baseline because no baseline has been set.")
+            return 30
+        
+        targetIx = find_migration_file_version(config, migrations, baselineVersion['version'])
+        targetVersion = baselineVersion['version']
+    else:
+        targetIx = find_migration_file_version(config, migrations, targetVersion)
     if targetIx is None:
         write_log(config, "ERROR:: Could not find target migration version '{}'".format(config['version']), level=logging.ERROR)
-        return 30
+        return 31
     
     if config.get('sequential', True) and currentVersion:
         startIx = find_migration_file_version(config, migrations, currentVersion['version'])
@@ -1140,7 +1227,10 @@ def run_downgrade(config):
         if startIx is None:
             startIx = targetIx
         elif startIx == targetIx: # Sanity check!
-            write_log(config, "INFO: Database schema is already at this version (current = {}; target = {})".format(currentVersion['version'], config['version']))
+            msg = "INFO: Database schema is already at this version (current = {}; target = {})".format(currentVersion['version'], targetVersion)
+            if config.get('chatty'):
+                print(msg)
+            write_log(config, msg)
             return 0
         else:
             # since we've found where we currently are, we need to inc by 1 to get the "real" starting point
@@ -1153,37 +1243,45 @@ def run_downgrade(config):
     
     if startIx < targetIx:
         write_log(config, "ERROR:: When migrating to a later version, you must use --upgrade (current = {}; target = {})".format(currentVersion['version'], config['version']), level=logging.ERROR)
-        return 31
+        return 32
     
     if baselineVersion and (migrations[targetIx]['sort_version'] < baselineVersion['sort_version']):
         write_log(config, "ERROR:: The target version is behind the baseline version (target = {}; baseline = {})".format(config['version'], baselineVersion['version']), level=logging.ERROR)
-        return 32
+        return 33
     
     if baselineVersion and (migrations[startIx]['sort_version'] < baselineVersion['sort_version']):
         write_log(config, "ERROR:: The starting version is behind the baseline version (current = {}; baseline = {})".format(migrations[startIx]['version'], baselineVersion['version']), level=logging.ERROR)
-        return 32
+        return 34
     
     try:
         rc = run_migration_job(config, migrations, startIx, targetIx, -1)
     except Exception as e:
         write_log(config, "EXCEPTION {}:: running migration job: {}".format(type(e).__name__, e), level=logging.ERROR)
-        return 34
+        return 35
     else:
         if not rc:
-            return 35
-    
+            return 36
+
+    currentVersion = get_current(config)
+    if currentVersion:
+        msg = "Current database version is: {}".format(currentVersion['version'])
+        if config.get('chatty'):
+            print(msg)
+        write_log(config, msg)
+
     return 0
-# End run_migration_job
+# End run_downgrade
 
 
-def display_current_version(currentVersion):
+def display_version_info(version_info, legend):
     """
     Pretty-prints the dict for the migration record of the current version.
     """
     
-    print("Current version:")
+    print(legend)
+    width = max(len(c) for c in VALID_COLUMNS)
     for k in VALID_COLUMNS:
-        print("    {}: {}".format(k, currentVersion[k]))
+        print("    {0:{1}s} : {2}".format(k, width, version_info[k]))
 # End display_current_version
 
 
@@ -1192,15 +1290,34 @@ def get_info(config):
     Action function. Returns int. 
     Gets and displays the migration record for the current version
     """
-    
-    write_log(config, "Running Get Info for current version")
-    
-    currentVersion = get_current(config)
-    if currentVersion:
-        display_current_version(currentVersion)
+
+    baselineVersion = get_baseline(config)
+
+    if config['version'] == 'current':
+        write_log(config, "Running Get Info for current version")
+        currentVersion = get_current(config)
+        if currentVersion:
+            if baselineVersion  and (currentVersion['version'] == baselineVersion['version']):
+                currentVersion['is_baseline'] = 1
+
+            display_version_info(currentVersion, "Current version:")
+        else:
+            write_log(config, "No current version information. Migrations may not have been run yet.", level=logging.WARNING)
     else:
-        write_log(config, "No current version information. Migrations baseline may not have been set yet.", level=logging.ERROR)
-    
+        write_log(config, "Running Get Info for baseline version")
+        if baselineVersion:
+            actualVersion = get_version(config, baselineVersion['version'])
+            if actualVersion:
+                baselineVersion['migration_file'] = actualVersion['migration_file']
+                baselineVersion['migration_action'] = actualVersion['migration_action'] 
+                baselineVersion['migration_type'] = actualVersion['migration_type']
+                baselineVersion['is_current'] = actualVersion['is_current']
+            
+            display_version_info(baselineVersion, "Baseline version:")
+        else:
+            write_log(config, "No baeline version information. Migrations baseline may not have been set yet.",
+                      level=logging.WARNING)
+
     return 0
 # End get_info
 
@@ -1246,20 +1363,20 @@ def wrap_text(text, limit):
 # End wrap_text
 
 
-def write_header(fields, lengths):
+def write_header(tmp_file, fields, lengths):
     """
     Write migration data output header
     """
     
     fmtStr = ' | '.join("{{{0}:{1}s}}".format(i, lengths[fields[i]]) for i in range(len(fields)))
-    print(fmtStr.format(*fields))
+    print(fmtStr.format(*fields), file=tmp_file)
     
     fmtStr = '-+-'.join("{{{0}:-<{1}s}}".format(i, lengths[fields[i]]) for i in range(len(fields)))
-    print(fmtStr.format(*[''] * len(fields)))
+    print(fmtStr.format(*[''] * len(fields)), file=tmp_file)
 # End write_header
 
 
-def write_line(record, fields, lengths):
+def write_line(tmp_file, record, fields, lengths):
     """
     Write a formatted table of data to stdout.
     """
@@ -1282,7 +1399,7 @@ def write_line(record, fields, lengths):
                 haveData = bool(out[col])
         
         if haveData:
-            print(fmtStr.format(**out))
+            print(fmtStr.format(**out), file=tmp_file)
             i += 1
         else:
             break
@@ -1294,14 +1411,40 @@ def output_migration_data(config, migrationLog):
     """
     Print formatted migration data to stdout
     """
+    import tempfile
+    import subprocess
+    import shutil
     
+    tmp_file, tmp_file_name = tempfile.mkstemp(text=True)
+    tmp_file = os.fdopen(tmp_file, 'w')
     fields = ['#'] + VALID_COLUMNS
     lengths = dict(zip(fields, [5] + COLUMN_LENGTHS))
-    write_header(fields, lengths)
-    for i, record in enumerate(migrationLog):
+    write_header(tmp_file, fields, lengths)
+    
+    if bool(shutil.which('less')):
+        traversal = reversed(range(len(migrationLog)))
+    else:
+        traversal = range(len(migrationLog))
+    
+    for i in traversal:
+        record = migrationLog[i]
         record['#'] = i
-        write_line(record, fields, lengths)
+        write_line(tmp_file, record, fields, lengths)
     # End record loop
+    
+    tmp_file.flush()
+    tmp_file.close()
+    
+    try:
+        subprocess.call(['less', '-E' '-F', '-P', ':', tmp_file_name])
+    except:
+        with open(tmp_file_name, 'r') as tmpf:
+            buff = ['']
+            while len(buff):
+                print(buff)
+                buff = tmpf.read(4000)
+    finally:
+        os.unlink(tmp_file_name)
 # End get_migration_data
 
 
@@ -1314,7 +1457,9 @@ def get_migration_data(config):
     
     try:
         with conn.cursor() as cur:
-            cur.execute("""select * from {}{} order by applied_ts;""".format(config.get('migration_table_schema', ''), config['migration_table_name']))
+            sql = """select * from {}{} order by applied_ts;""".format(config.get('migration_table_schema', ''), 
+                                                                            config['migration_table_name'])
+            cur.execute(sql)
             res = cur.fetchall()
     except Exception as e:
         write_log(config, "EXCEPTION:: Getting migration application log ({}).".format(e), level=logging.ERROR)
@@ -1354,7 +1499,7 @@ def new_config():
 # End new_config
 
 
-def initialize(configFileName, action, version, sequential=True, verbose=False):
+def initialize(configFileName, action, version, sequential=True, verbose=False, chatty=False):
     """
     Perform all initializations for pydbvolve:
         Load config file
@@ -1373,14 +1518,20 @@ def initialize(configFileName, action, version, sequential=True, verbose=False):
                    'version': version,
                    'migration_user': get_migration_user(config),
                    'sequential': sequential,
-                   'verbose': verbose})
+                   'verbose': verbose,
+                   'chatty': chatty,
+                   'config_file_path': os.path.abspath(configFileName)})
     
-    config.update(get_config())
+    # get_config calls the config setup functions that may be overridden by the config code
+    run_config(config)
     
     confirm_dirs(config)
     
     setup_log(config)
-    write_log(config, "Running {} as user {}".format(os.path.basename(sys.argv[0]), config['migration_user']))
+    msg = "Running {} as user {}".format(os.path.basename(sys.argv[0]), config['migration_user'])
+    if chatty:
+        print(msg)
+    write_log(config, msg)
     
     write_log(config, "Getting DB Credentials")
     try:
@@ -1406,7 +1557,7 @@ def initialize(configFileName, action, version, sequential=True, verbose=False):
 # End initialize
 
 
-def run_migration(configFileName, action, version, sequential, verbose=False):
+def run_migration(configFileName, action, version, sequential=True, verbose=False, chatty=False):
     """
     Main handler function for pydbvolve. 
     If you intend to import pydbvolve into a larger project, this is the function that should serve as the entry point.
@@ -1421,7 +1572,7 @@ def run_migration(configFileName, action, version, sequential, verbose=False):
         write_log({}, "Config file '{}' does not exist or cannot be read.".format(configFileName), level=logging.ERROR)
         return 1
     
-    config = initialize(configFileName, action, version, sequential, verbose)
+    config = initialize(configFileName, action, version, sequential, verbose, chatty)
     if not config:
         write_log({}, "Error creating config dict. Script cannot run.", level=logging.ERROR)
         return 2
@@ -1436,12 +1587,27 @@ def run_migration(configFileName, action, version, sequential, verbose=False):
     
     # Resolve action code string to action function
     if action == 'baseline':
+        if version == LATEST_VERSION:
+            write_log(config, "Cannot baseline to 'latest'", level=logging.ERROR)
+            return 5  # re-using this one since it's still an action check
+        elif version == BASELINE_VERSION:
+            write_log(config, "Cannot baseline to 'baseline'", level=logging.ERROR)
+            return 5  # re-using this one since it's still an action check
         action = set_baseline
     elif action == 'upgrade':
+        if version == CURRENT_VERSION:
+            write_log(config, "Cannot upgrade to 'current'", level=logging.ERROR)
+            return 5  # re-using this one since it's still an action check
+        elif version == BASELINE_VERSION:
+            write_log(config, "Cannot upgrade to 'baseline'", level=logging.ERROR)
+            return 5  # re-using this one since it's still an action check
         action = run_upgrade
     elif action == 'downgrade':
         if version == LATEST_VERSION:
             write_log(config, "Cannot downgrade to 'latest'", level=logging.ERROR)
+            return 5  # re-using this one since it's still an action check
+        elif version == CURRENT_VERSION:
+            write_log(config, "Cannot downgrade to 'current'", level=logging.ERROR)
             return 5  # re-using this one since it's still an action check
         action = run_downgrade
     elif action == 'info':

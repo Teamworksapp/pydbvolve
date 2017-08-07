@@ -10,8 +10,8 @@ import importlib
 sys.path.insert(1, os.path.abspath('.'))
 import pydbvolve
 
-TEST_CONFIG_FILE = os.path.join('tests', 'pydbvolve.conf')
-TEST_DB_FILE = os.path.join('tests', 'test_db.sqlite')
+TEST_CONFIG_FILE = os.path.abspath(os.path.join('tests', 'pydbvolve.conf'))
+TEST_DB_FILE = os.path.abspath(os.path.join('tests', 'test_db.sqlite'))
 
 
 def test_00_local_module(capsys):
@@ -40,7 +40,7 @@ def test_02_get_migration_user():
 
 def test_03_get_base_dir():
     """Verify that we get a non-Falsey return from get_base_dir."""
-    bdir = pydbvolve.get_base_dir()
+    bdir = pydbvolve.get_base_dir(TEST_CONFIG_FILE)
     assert(bdir is not None)
     assert(isinstance(bdir, str))
     assert(len(bdir) > 0)
@@ -49,41 +49,44 @@ def test_03_get_base_dir():
 
 def test_04_get_migration_base_dir():
     """Verify that we get a non-Falsey return from get_migration_base_dir."""
-    mdir = pydbvolve.get_migration_base_dir()
+    mdir = pydbvolve.get_migration_base_dir(pydbvolve.get_base_dir(TEST_CONFIG_FILE))
     assert(mdir is not None)
     assert(isinstance(mdir, str))
     assert(len(mdir) > 0)
-    assert(mdir.startswith(pydbvolve.get_base_dir()))
+    assert(mdir.startswith(pydbvolve.get_base_dir(TEST_CONFIG_FILE)))
 # End test_04_get_migration_base_dir
 
 
 def test_05_get_migration_upgrade_dir():
     """Verify that we get a non-Falsey return from get_migration_upgrade_dir."""
-    mdir = pydbvolve.get_migration_upgrade_dir()
-    assert(mdir is not None)
-    assert(isinstance(mdir, str))
-    assert(len(mdir) > 0)
-    assert(mdir.startswith(pydbvolve.get_migration_base_dir()))
+    mdir = pydbvolve.get_migration_base_dir(pydbvolve.get_base_dir(TEST_CONFIG_FILE))
+    udir = pydbvolve.get_migration_upgrade_dir(mdir)
+    assert(udir is not None)
+    assert(isinstance(udir, str))
+    assert(len(udir) > 0)
+    assert(udir.startswith(mdir))
 # End test_05_get_migration_upgrade_dir
 
 
 def test_06_get_migration_downgrade_dir():
     """Verify that we get a non-Falsey return from get_migration_downgrade_dir."""
-    mdir = pydbvolve.get_migration_downgrade_dir()
-    assert(mdir is not None)
-    assert(isinstance(mdir, str))
-    assert(len(mdir) > 0)
-    assert(mdir.startswith(pydbvolve.get_migration_base_dir()))
+    mdir = pydbvolve.get_migration_base_dir(pydbvolve.get_base_dir(TEST_CONFIG_FILE))
+    ddir = pydbvolve.get_migration_downgrade_dir(mdir)
+    assert(ddir is not None)
+    assert(isinstance(ddir, str))
+    assert(len(ddir) > 0)
+    assert(ddir.startswith(mdir))
 # End test_06_get_migration_downgrade_dir
 
 
 def test_07_get_log_dir():
     """Verify that we get a non-Falsey return from get_log_dir."""
-    mdir = pydbvolve.get_log_dir()
-    assert(mdir is not None)
-    assert(isinstance(mdir, str))
-    assert(len(mdir) > 0)
-    assert(mdir.startswith(pydbvolve.get_base_dir()))
+    bdir = pydbvolve.get_base_dir(TEST_CONFIG_FILE)
+    ldir = pydbvolve.get_log_dir(bdir)
+    assert(ldir is not None)
+    assert(isinstance(ldir, str))
+    assert(len(ldir) > 0)
+    assert(ldir.startswith(bdir))
 # End test_07_get_log_dir
 
 
@@ -190,7 +193,7 @@ def test_14_load_config():
 # End test_load_config
 
 
-def test_15_get_config():
+def test_15_run_config():
     """Verify we get a config dict with all expected keys present and having no None values."""
     def get_migration_table_schema():
         return "public"
@@ -202,8 +205,9 @@ def test_15_get_config():
                    'version': pydbvolve.LATEST_VERSION,
                    'migration_user': pydbvolve.get_migration_user(config),
                    'sequential': False,
+                   'config_file_path': TEST_CONFIG_FILE,
                    'verbose': False})
-    config.update(pydbvolve.get_config())
+    pydbvolve.run_config(config)
     
     for key in ('base_dir',
                 'migration_dir',
@@ -223,7 +227,7 @@ def test_15_get_config():
         assert(config[key] is not None)
     
     importlib.reload(pydbvolve)
-# End test_15_get_config
+# End test_15_run_config
 
 
 def test_16_confirm_dirs():
@@ -233,8 +237,9 @@ def test_16_confirm_dirs():
                    'version': pydbvolve.LATEST_VERSION,
                    'migration_user': pydbvolve.get_migration_user(config),
                    'sequential': False,
+                   'config_file_path': TEST_CONFIG_FILE,
                    'verbose': False})
-    config.update(pydbvolve.get_config())
+    pydbvolve.run_config(config)
     pydbvolve.confirm_dirs(config)
     
     for dirname in (k for k in config.keys() if k.endswith('_dir')):
@@ -246,7 +251,13 @@ def test_17_get_db_credentials():
     """Test the return from get_db_credentials call"""
     pydbvolve.load_config(TEST_CONFIG_FILE)
     config = pydbvolve.new_config()
-    config.update(pydbvolve.get_config())
+    config.update({'migration_action': 'info', 
+                   'version': pydbvolve.LATEST_VERSION,
+                   'migration_user': pydbvolve.get_migration_user(config),
+                   'sequential': False,
+                   'config_file_path': TEST_CONFIG_FILE,
+                   'verbose': False})
+    pydbvolve.run_config(config)
     cred = pydbvolve.get_db_credentials(config)
     
     assert(cred is not None)
@@ -258,7 +269,13 @@ def test_17_get_db_credentials():
 def test_18_get_database_user():
     pydbvolve.load_config(TEST_CONFIG_FILE)
     config = pydbvolve.new_config()
-    config.update(pydbvolve.get_config())
+    config.update({'migration_action': 'info', 
+                   'version': pydbvolve.LATEST_VERSION,
+                   'migration_user': pydbvolve.get_migration_user(config),
+                   'sequential': False,
+                   'config_file_path': TEST_CONFIG_FILE,
+                   'verbose': False})
+    pydbvolve.run_config(config)
     cred = pydbvolve.get_db_credentials(config)
     dbuser = pydbvolve.get_database_user(config, cred)
     
@@ -276,8 +293,9 @@ def test_19_connect_db():
                    'version': pydbvolve.LATEST_VERSION,
                    'migration_user': pydbvolve.get_migration_user(config),
                    'sequential': False,
+                   'config_file_path': TEST_CONFIG_FILE,
                    'verbose': False})
-    config.update(pydbvolve.get_config())
+    pydbvolve.run_config(config)
     cred = pydbvolve.get_db_credentials(config)
     conn = pydbvolve.get_db_connection(config, cred)
     
@@ -295,7 +313,7 @@ def test_20_initialize(capsys):
         assert(config is not None)
         assert(isinstance(config, dict))
         assert(len(config) > 0)
-        assert(config['base_dir'] == './tests')
+        assert(config['base_dir'] == os.path.dirname(TEST_CONFIG_FILE))
         assert(config['migration_action'] == 'info')
         assert(config['version'] == 'r1.1.10')
         assert(config['sequential'] == True)
@@ -324,9 +342,13 @@ def test_22_set_log_file_name():
     
     pydbvolve.load_config(TEST_CONFIG_FILE)
     config = pydbvolve.new_config()
-    config.update(pydbvolve.get_config())
-    config['version'] = 'r1.0.0'
-    config['migration_action'] = 'upgrade'
+    config.update({'migration_action': 'upgrade', 
+                   'version': 'r1.0.0',
+                   'migration_user': pydbvolve.get_migration_user(config),
+                   'sequential': False,
+                   'config_file_path': TEST_CONFIG_FILE,
+                   'verbose': False})
+    pydbvolve.run_config(config)
     
     pydbvolve.set_log_file_name(config)
     file_name = config['log_file_name']

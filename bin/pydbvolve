@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-__VERSION__ = (1, 0, 1)
+__VERSION__ = (1, 0, 2)
 __VERSION_STRING__ = '.'.join(str(v) for v in __VERSION__)
 
 
@@ -22,19 +22,22 @@ if __name__ == '__main__':
         description += "Only SQL (.sql) and Python (.py) migration scripts are supported."
         
         parser = argparse.ArgumentParser(description=description)
-        parser.add_argument("--config",         dest="configFileName",    metavar="CONF_FILE",  required=True,  help="Config code file")
-        parser.add_argument("--force",          dest="sequential",        action="store_false",                 help="Apply version directly (no sequential iteration through versions)", default=True)
-        parser.add_argument("--verbose",        dest="verbose",           action="store_true",                  help="Verbose mode (Echo log to screen; Show tracebacks.)", default=False)
-        parser.add_argument("--libversion",     dest="libversion",        action="store_true",                  help="Print the library version and exit", default=False)
-        parser.add_argument("--version",        dest="version",           action="store_true",                  help="Print the main script version and exit", default=False)
+        parser.add_argument("--config",             dest="configFileName",    metavar="CONF_FILE",  required=True,  help="Config code file")
+        parser.add_argument("--force",              dest="sequential",        action="store_false",                 help="Apply version directly (no sequential iteration through versions)", default=True)
+        parser.add_argument("--verbose",            dest="verbose",           action="store_true",                  help="Verbose mode (Echo log to screen; Show tracebacks.)", default=False)
+        parser.add_argument("--libversion",         dest="libversion",        action="store_true",                  help="Print the library version and exit", default=False)
+        parser.add_argument("--version",            dest="version",           action="store_true",                  help="Print the main script version and exit", default=False)
         mgroup = parser.add_mutually_exclusive_group(required=True)
-        mgroup.add_argument("--baseline",       dest="baselineVersion",   metavar="B_VERSION",                  help="Set baseline version in migration table")
-        mgroup.add_argument("--upgrade",        dest="upgradeVersion",    metavar="U_VERSION",                  help="Sequential upgrade to version")
-        mgroup.add_argument("--upgrade-latest", dest="upgradeLatest",     action="store_true",                  help="Sequential upgrade to latest version")
-        mgroup.add_argument("--downgrade",      dest="downgradeVersion",  metavar="D_VERSION",                  help="Sequential downgrade to version")
-        mgroup.add_argument("--info",           dest="getInfo",           action="store_true",                  help="Get the current schema version information", default=False)
-        mgroup.add_argument("--migration-log",  dest="migrationLog",      action="store_true",                  help="Output migration log from database.", default=False)
-        mgroup.add_argument("--verify",         dest="verifyVersion",     metavar="V_VERSION",                  help="Verify the schema is at specified version")
+        mgroup.add_argument("--baseline",           dest="baselineVersion",   metavar="B_VERSION",                  help="Set baseline version in migration table")
+        mgroup.add_argument("--baseline-current",   dest="baselineCurrent",   action="store_true",                  help="Set baseline version to the current version", default=False)
+        mgroup.add_argument("--upgrade",            dest="upgradeVersion",    metavar="U_VERSION",                  help="Sequential upgrade to version")
+        mgroup.add_argument("--upgrade-latest",     dest="upgradeLatest",     action="store_true",                  help="Sequential upgrade to latest version", default=False)
+        mgroup.add_argument("--downgrade",          dest="downgradeVersion",  metavar="D_VERSION",                  help="Sequential downgrade to version")
+        mgroup.add_argument("--downgrade-baseline", dest="downgradeBaseline", action="store_true",                  help="Sequential downgrade to version", default=False)
+        mgroup.add_argument("--info",               dest="getInfo",           action="store_true",                  help="Get the current version information", default=False)
+        mgroup.add_argument("--baseline-info",      dest="getBaselineInfo",   action="store_true",                  help="Get the baseline version information", default=False)
+        mgroup.add_argument("--migration-log",      dest="migrationLog",      action="store_true",                  help="Output migration log from database.", default=False)
+        mgroup.add_argument("--verify",             dest="verifyVersion",     metavar="V_VERSION",                  help="Verify the schema is at specified version")
         
         return parser
     # End init_args
@@ -67,6 +70,9 @@ if __name__ == '__main__':
         if args.baselineVersion:
             action = 'baseline'
             version = args.baselineVersion
+        elif args.baselineCurrent:
+            action = 'baseline'
+            version = pydbvolve.CURRENT_VERSION
         elif args.upgradeVersion:
             action = 'upgrade'
             version = args.upgradeVersion
@@ -76,9 +82,15 @@ if __name__ == '__main__':
         elif args.downgradeVersion:
             action = 'downgrade'
             version = args.downgradeVersion
+        elif args.downgradeBaseline:
+            action = 'downgrade'
+            version = pydbvolve.BASELINE_VERSION
         elif args.getInfo:
             action = 'info'
             version = 'current'
+        elif args.getBaselineInfo:
+            action = 'info'
+            version = 'baseline'
         elif args.migrationLog:
             action = 'log'
             version = 'all'
@@ -89,7 +101,7 @@ if __name__ == '__main__':
         sequential = args.sequential
         verbose = args.verbose
         
-        rc = pydbvolve.run_migration(args.configFileName, action, version, sequential, verbose)
+        rc = pydbvolve.run_migration(args.configFileName, action, version, sequential, verbose, chatty=True)
         
         return rc
     # End main
@@ -99,6 +111,8 @@ if __name__ == '__main__':
         rc = main()
         if rc != 0:
             print("Exiting with {}".format(rc), file=sys.stderr)
+        else:
+            print("Done.")
         
         sys.exit(rc)
     except Exception as e:

@@ -61,12 +61,16 @@ Plus **one** of:
 
 **--baseline B_VERSION**  
 Set a particular version tag as the **baseline**  
+**--baseline-current**  
+Set the current version tag as the **baseline**. A migration must be run before using this option.  
 **--upgrade U_VERSION**  
 Upgrade database from the current version to a newer version  
 **--upgrade-latest**  
 Upgrade database from the current version to the latest known version  
 **--downgrade D_VERSION**  
 Downgrade database from the current version to an earlier version  
+**--downgrade-baseline**  
+Downgrade database from the current version to the baseline version. A baseline must have been previously set.  
 **--verify V_VERSION**  
 Check to see if the current version matches the specified version. Returns a zero return code on match.  
 **--info**  
@@ -103,11 +107,11 @@ The structure use to hole the configuration values is an instance of **dict**. T
 
 | Function               | Return Type | Definition 
 | ---------------------- | ----------- | -----------
-| get_base_dir()         | str         | Returns the base directory for the migrations. Default is **./pydbvolve** Config key is **base_dir**.
-| get_migration_base_dir() | str       | Returns the base directory for the migration subdirectories. Default is os.path.join(get_base_dir(), 'migrations'). Config key is **migration_dir**.
-| get_migration_upgrade_dir() | str    | Returns the directory that will contain the upgrade scripts. Default is os.path.join(get_migration_base_dir(), 'upgrades'). Config key is **migration_upgrade_dir**.
-| get_migration_downgrade_dir() | str  | Returns the directory that will contain the downgrade scriptes. Default is os.path.join(get_migration_base_dir(), 'downgrades'). Config key is **migration_downgrade_dir**.
-| get_log_dir()          | str         | Returns the directory that will contain the log files. Default is os.path.join(get_base_dir(), "logs") Config key is **log_dir**.
+| get_base_dir(config_file_path)         | str         | Returns the base directory for the migrations. Default is **<config_file_dir>/pydbvolve** Config key is **base_dir**.
+| get_migration_base_dir(base_dir) | str       | Returns the base directory for the migration subdirectories. Default is base_dir, 'migrations'). Config key is **migration_dir**.
+| get_migration_upgrade_dir(migration_base_dir) | str    | Returns the directory that will contain the upgrade scripts. Default is migration_base_dir, 'upgrades'). Config key is **migration_upgrade_dir**.
+| get_migration_downgrade_dir(migration_base_dir) | str  | Returns the directory that will contain the downgrade scriptes. Default is migration_base_dir, 'downgrades'). Config key is **migration_downgrade_dir**.
+| get_log_dir(base_dir)          | str         | Returns the directory that will contain the log files. Default is base_dir, "logs") Config key is **log_dir**.
 | get_migration_table_name() | str     | Returns the migration table name. Default is **__migrations__**. Config key is **migration_table_name**
 | get_migration_table_schema() | str   | Returns the name of the schema in which the migration table should reside. Default is **public**. Config key is **migration_table_schema**.
 | get_positional_variable_marker() | str | Returns the string that should be used to indicate a positional variable for the database module used. This is used internally for creating the migration records to be stored in the migration table. Default is **%s**. Config key is **positional_variable_marker**
@@ -531,15 +535,15 @@ A str instance that is the migration action. Valid values are:
 | action                 | Corresponding CLI Argument
 | ---------------------- | -------------------------------
 | 'upgrade'              | --upgrade, --upgrade-latest 
-| 'downgrade'            | --downgrade
-| 'baseline'             | --baseline
+| 'downgrade'            | --downgrade, --downgrade-baseline
+| 'baseline'             | --baseline, --baseline-current
 | 'info'                 | --info
 | 'verify'               | --verify
 | 'log'                  | --migration-log
 
 The value of action is always tested against **pydbvolve.VALID_ACTIONS**  
 **version**  
-A str instance that has the version string to act on. For the **log** and **info** actions, this can be an empty string. To upgrade to the latest version, this should be set to **pydbvolve.LATEST_VERSION**  
+A str instance that has the version string to act on. For the **log** and **info** actions, this can be an empty string. To upgrade to the latest version, this should be set to **pydbvolve.LATEST_VERSION**. To downgrade to the baseline version, set version to **pydbvolve.BASELINE_VERSION**. To baseline the current version, set the version to **pydbvolve.CURRENT_VERSION**.  
 **sequential**  
 Bool instance. If you wish to apply migrations sequentially, set this to **True**. To apply an out-of-order migration, set it to **False**  
 **verbose**  
