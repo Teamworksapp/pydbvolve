@@ -537,13 +537,13 @@ A str instance that is the migration action. Valid values are:
 | 'upgrade'              | --upgrade, --upgrade-latest 
 | 'downgrade'            | --downgrade, --downgrade-baseline
 | 'baseline'             | --baseline, --baseline-current
-| 'info'                 | --info
+| 'info'                 | --info, --baseline-info
 | 'verify'               | --verify
 | 'log'                  | --migration-log
 
 The value of action is always tested against **pydbvolve.VALID_ACTIONS**  
 **version**  
-A str instance that has the version string to act on. For the **log** and **info** actions, this can be an empty string. To upgrade to the latest version, this should be set to **pydbvolve.LATEST_VERSION**. To downgrade to the baseline version, set version to **pydbvolve.BASELINE_VERSION**. To baseline the current version, set the version to **pydbvolve.CURRENT_VERSION**.  
+A str instance that has the version string to act on. For the **log** and **info** actions, this can be an empty string. To upgrade to the latest version, this should be set to **pydbvolve.LATEST_VERSION**. To downgrade to the baseline version, set version to **pydbvolve.BASELINE_VERSION**. To baseline the current version, set the version to **pydbvolve.CURRENT_VERSION**. The **info** command will return the current version information if **pydbvolve.LATEST_VERSION** is passed as the version. Otherwise, info will try to return the latest applied information for a specific version tag outside of the special values.  
 **sequential**  
 Bool instance. If you wish to apply migrations sequentially, set this to **True**. To apply an out-of-order migration, set it to **False**  
 **verbose**  

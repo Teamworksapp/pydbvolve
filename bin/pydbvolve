@@ -87,10 +87,10 @@ if __name__ == '__main__':
             version = pydbvolve.BASELINE_VERSION
         elif args.getInfo:
             action = 'info'
-            version = 'current'
+            version = pydbvolve.CURRENT_VERSION
         elif args.getBaselineInfo:
             action = 'info'
-            version = 'baseline'
+            version = pydbvolve.BASELINE_VERSION
         elif args.migrationLog:
             action = 'log'
             version = 'all'

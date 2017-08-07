@@ -1299,7 +1299,7 @@ def get_info(config):
 
     baselineVersion = get_baseline(config)
 
-    if config['version'] == 'current':
+    if config['version'] == CURRENT_VERSION:
         write_log(config, "Running Get Info for current version")
         currentVersion = get_current(config)
         if currentVersion:
@@ -1309,7 +1309,7 @@ def get_info(config):
             display_version_info(currentVersion, "Current version:")
         else:
             write_log(config, "No current version information. Migrations may not have been run yet.", level=logging.WARNING)
-    else:
+    elif config['version'] == BASELINE_VERSION:
         write_log(config, "Running Get Info for baseline version")
         if baselineVersion:
             actualVersion = get_version(config, baselineVersion['version'])
@@ -1323,6 +1323,16 @@ def get_info(config):
         else:
             write_log(config, "No baeline version information. Migrations baseline may not have been set yet.",
                       level=logging.WARNING)
+    else:
+        version = get_version(config, config['version'])
+        if not version:
+            version = get_version(config, config['version'], exclude_baseline=False)
+        if not version:
+            write_log(config, "No version information can be found for {}.".format(config['version']),
+                      level=logging.WARNING)
+        else:
+            display_version_info(version, "Version information:")
+            
 
     return 0
 # End get_info
@@ -1618,6 +1628,8 @@ def run_migration(configFileName, action, version, sequential=True, verbose=Fals
         action = run_downgrade
     elif action == 'info':
         action = get_info
+        if version == LATEST_VERSION:
+            config['version'] = CURRENT_VERSION
     elif action == 'log':
         action = migration_log
     elif action == 'verify':
