@@ -1126,8 +1126,19 @@ def run_upgrade(config):
     if config['version'] == LATEST_VERSION:
         targetIx = len(migrations) - 1
         targetVersion = migrations[targetIx]['version']
+        # Special case check here in case the local files are out-of-sync with the db
+        if currentVersion and (get_sort_version(config, targetVersion) < get_sort_version(config, currentVersion['version'])):
+            msg = "The database is currently at version {} which is ahead of your latest " \
+                  "migration file version {}. Changes will not be made. Your migrations " \
+                  "are out-of-sync.".format(currentVersion['version'], targetVersion)
+            write_log(config, msg, level=logging.WARNING)
+            
+            # Exit on no error as if it was a current/target match
+            # Yes, I know this is different than when you specify a version directly
+            return 0 
     else:
         targetIx = find_migration_file_version(config, migrations, targetVersion)
+    
     if targetIx is None:
         write_log(config, "ERROR:: Could not find target migration version '{}'".format(config['version']), level=logging.ERROR)
         return 20
@@ -1201,6 +1212,10 @@ def run_downgrade(config):
     conn.rollback() # Clear any potential open transactions
     targetVersion = config['version']
     
+    if not currentVersion:
+        write_log(config, "No current version. Nothing to downgrade from.", level=logging.WARNING)
+        return 30
+    
     migrations = setup_migrations(config)
     if not migrations:
         write_log(config, 'There are no downgrade migration files.')
@@ -1217,8 +1232,22 @@ def run_downgrade(config):
         
         targetIx = find_migration_file_version(config, migrations, baselineVersion['version'])
         targetVersion = baselineVersion['version']
+        if targetIx is None:
+            write_log(config, 
+                      "Could not find baseline version {} file! Your migration files are out-of-sync with the database".format(targetVersion),
+                      level=logging.ERROR)
+            return 31
+        elif currentVersion and (get_sort_version(config, baselineVersion['version']) >= get_sort_version(config, currentVersion['version'])):
+            msg = "Your current version {} is below the recorded baseline version. " \
+                  "Cannot downgrade without resetting baseline.".format(currentVersion['version'], baselineVersion['version'])
+            write_log(config, msg, level=logging.WARNING)
+            
+            # This may not be an error if pydbvolve is being used in distributed development
+            # Give the benefit of the doubt here.
+            return 0
     else:
         targetIx = find_migration_file_version(config, migrations, targetVersion)
+    
     if targetIx is None:
         write_log(config, "ERROR:: Could not find target migration version '{}'".format(config['version']), level=logging.ERROR)
         return 31
