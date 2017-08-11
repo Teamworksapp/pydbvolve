@@ -678,17 +678,8 @@ def test_20_downgrade_without_upgrade(capsys):
     except:
         pass
     
-    with capsys.disabled():
-        try:
-            stderr_save = sys.stderr
-            sys.stderr = StringIO()
-            
-            rc = pydbvolve.run_migration(TEST_CONFIG_FILE, 'downgrade', 'r0.0.0', True, False)
-            output = sys.stderr.getvalue()
-            assert(rc == 0)
-            assert('WARNING' in output)
-        finally:
-            sys.stderr = stderr_save
+    rc = pydbvolve.run_migration(TEST_CONFIG_FILE, 'downgrade', 'r0.0.0', True, False)
+    assert(rc == 30)
     
     os.unlink(TEST_DB_FILE)
 # End test_18_bad_upgrade
