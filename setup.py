@@ -2,11 +2,11 @@ from setuptools import setup
 
 setup(name='pydbvolve',
       description='Database migrations',
-      long_description='Database migrations with Python3 using sql or python3 migrations. Evolve your database with python!',
+      long_description='Python Database Evolution. Database migrations with Python3 using sql or python3 migrations. Evolve your database with python!',
       url="https://github.com/Teamworksapp/pydbvolve",
       author="Teamworksapp",
       author_email="teamworks_pypi@teamworks.com",
-      version='1.0.1',
+      version='1.0.2',
       license='MIT',
       classifiers=[
         # How mature is this project? Common values are
