@@ -2,7 +2,7 @@
 #  All recurds returned by database calls should be of dict type or behave exactly like dict!!
 # ====================================
 
-__VERSION__ = (1, 0, 2)
+__VERSION__ = (1, 0, 3)
 __VERSION_STRING__ = '.'.join(str(v) for v in __VERSION__)
 
 
@@ -31,6 +31,7 @@ VALID_ACTIONS = {'upgrade', 'downgrade', 'baseline', 'info', 'verify', 'log'}
 LATEST_VERSION = '\x00LATEST\x00'
 CURRENT_VERSION = '\x00CURRENT\x00'
 BASELINE_VERSION = '\x00BASELINE\x00'
+START_POINT = '\x00START\x00'
 
 LOG_FORMAT = '%(asctime)s %(levelname)s %(migration_user)s: %(message)s'
 LOG_ECHO_FORMAT = '%(asctime)s: %(message)s'
@@ -1073,9 +1074,37 @@ def setup_migrations(config):
         # info-ize them
         migrations = [get_migration_filename_info(config, fn) for fn in migrations]
         # and sort 'em
-        migrations = sort_migrations(config, migrations)
+        migrations = sort_migrations(config, migrations, reverse=(config['migration_action'] == 'downgrade'))
 
-    return migrations
+        # Get applied migrations
+        applied_migrations = {}
+        for migration_data in get_migration_data(config):
+            migration_data['sort_version'] = get_sort_version(config, migration_data['version'])
+            applied_version = migration_data['version']
+            applied_action = migration_data['migration_action']
+            if applied_action.startswith('upgrade'):
+                applied_migrations[applied_version] = migration_data
+            elif applied_action.startswith('downgrade'):
+                if applied_version in applied_migrations:
+                    del applied_migrations[applied_version]
+
+        migration_map = {}
+        prior = None
+        for migration_data in migrations:
+            if len(migration_map) == 0:
+                migration_map[START_POINT] = migration_data;
+            else:
+                migration_map[prior['sort_version']] = migration_data
+            
+            applied_data = applied_migrations.get(migration_data['version'])
+            migration_data['applied'] = applied_data
+            if applied_data.get('is_current', 0) == 1:
+                migration_map[CURRENT_VERSION] = migration_data
+            if applied_data.get('is_baseline', 0) == 1:
+                migration_map[BASELINE_VERSION] = migration_data
+            prior = migration_data
+
+    return migration_map
 # End setup_migrations
 
 
@@ -1120,7 +1149,7 @@ def run_upgrade(config):
     migrations = setup_migrations(config)
     if not migrations:
         write_log(config, 'There are no upgrade migration files.')
-        return 29
+        return 0 # Nothing to do -- No error
     
     if config['version'] == LATEST_VERSION:
         targetIx = len(migrations) - 1

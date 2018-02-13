@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-__VERSION__ = (1, 0, 2)
+__VERSION__ = (1, 0, 3)
 __VERSION_STRING__ = '.'.join(str(v) for v in __VERSION__)
 
 
