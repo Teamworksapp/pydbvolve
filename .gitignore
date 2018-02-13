@@ -97,3 +97,5 @@ test_db.sqlite
 # cli testing
 pydbvolve-cli
 
+.pytest_cache
+
