@@ -11,6 +11,7 @@ import pydbvolve
 
 TEST_CONFIG_FILE = os.path.join('tests', 'pydbvolve.conf')
 TEST_DB_FILE = os.path.join('tests', 'test_db.sqlite')
+TEST_OUT_FILE = os.path.join('tests', 'test_post_statement.txt')
 
 
 def _table_exists(conn, table_name):
@@ -753,5 +754,18 @@ def test_22_downgrade_baseline(capsys):
 # End test_21_upgrade_baseline_current
 
 
+def test_22_post_statement():
+    try:
+        os.unlink(TEST_DB_FILE)
+    except:
+        pass
+
+    rc = pydbvolve.run_migration(TEST_CONFIG_FILE, 'upgrade', 'r1.0.0', True, False)
+    assert (rc == 0)
+    assert ('rowcount' in pydbvolve.TEST_OUT)
+    assert (pydbvolve.TEST_OUT['rowcount'] == 1)
+
+    os.unlink(TEST_DB_FILE)
+# End test_22_post_statement
 
 
