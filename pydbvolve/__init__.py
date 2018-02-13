@@ -105,7 +105,7 @@ def pre_statement(config, migration, statement):
 # End pre_statement
 
 
-def post_statement(config, migration, statement):
+def post_statement(config, migration, statement, cursor):
     """
     Called on SQL migrations only. Called after individual statement execution.
     Accepts config dict, migration dict, and statement string as arguments.
@@ -951,8 +951,7 @@ def run_sql_migration(config, migration):
             
             with conn.cursor() as cur:
                 cur.execute(stmt)
-            
-            post_statement(config, migration, stmt)
+                post_statement(config, migration, stmt, cur)
     
     return True
 # End run_sql_migration
