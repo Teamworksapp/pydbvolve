@@ -27,17 +27,18 @@ if __name__ == '__main__':
         parser.add_argument("--verbose",            dest="verbose",           action="store_true",                  help="Verbose mode (Echo log to screen; Show tracebacks.)", default=False)
         parser.add_argument("--libversion",         dest="libversion",        action="store_true",                  help="Print the library version and exit", default=False)
         parser.add_argument("--version",            dest="version",           action="store_true",                  help="Print the main script version and exit", default=False)
+        parser.add_argument("--dry-run",            dest="dry_run",           action="store_true",                  help="Do not save any action", default=False)
         mgroup = parser.add_mutually_exclusive_group(required=True)
-        mgroup.add_argument("--baseline",           dest="baselineVersion",   metavar="B_VERSION",                  help="Set baseline version in migration table")
-        mgroup.add_argument("--baseline-current",   dest="baselineCurrent",   action="store_true",                  help="Set baseline version to the current version", default=False)
-        mgroup.add_argument("--upgrade",            dest="upgradeVersion",    metavar="U_VERSION",                  help="Sequential upgrade to version")
-        mgroup.add_argument("--upgrade-latest",     dest="upgradeLatest",     action="store_true",                  help="Sequential upgrade to latest version", default=False)
-        mgroup.add_argument("--downgrade",          dest="downgradeVersion",  metavar="D_VERSION",                  help="Sequential downgrade to version")
-        mgroup.add_argument("--downgrade-baseline", dest="downgradeBaseline", action="store_true",                  help="Sequential downgrade to version", default=False)
-        mgroup.add_argument("--info",               dest="getInfo",           action="store_true",                  help="Get the current version information", default=False)
+        mgroup.add_argument("--baseline",           dest="baselineID",        metavar="BASE_ID",   nargs='?',       help="Set baseline version in migration table", default=argparse.SUPPRESS)
+        mgroup.add_argument("--upgrade",            dest="upgradeID",         metavar="UP_ID",     nargs='?',       help="Sequential upgrade to version", default=argparse.SUPPRESS)
+        mgroup.add_argument("--downgrade",          dest="downgradeID",       metavar="DOWN_ID",   nargs='?',       help="Sequential downgrade to version", default=argparse.SUPPRESS)
+        mgroup.add_argument("--info",               dest="infoID",            metavar="INFO_ID",   nargs='?',       help="Get the current version information", default=argparse.SUPPRESS)
         mgroup.add_argument("--baseline-info",      dest="getBaselineInfo",   action="store_true",                  help="Get the baseline version information", default=False)
         mgroup.add_argument("--migration-log",      dest="migrationLog",      action="store_true",                  help="Output migration log from database.", default=False)
-        mgroup.add_argument("--verify",             dest="verifyVersion",     metavar="V_VERSION",                  help="Verify the schema is at specified version")
+        mgroup.add_argument("--verify",             dest="verifyID",          metavar="VERIFY_ID"  nargs='?',       help="Verify the schema is at specified version")
+        mgroup.add_argument("--create",             dest="create",            metavar="FILE_NAME", nargs='?',       help="Create a new migration file. Specify file as <file>.sql or <file>.py", default=argmarse.SUPPRESS)
+        mgroup.add_argument("--delete",             dest="delete",            metavar="DEL_ID",                     help="Delete an unapplied migration")
+        mgroup.add_argument("--export-log",         dest="export",            metavar="LOG_FILE_NAME",              help="Export migration log as sql to file")
         
         return parser
     # End init_args
@@ -67,25 +68,16 @@ if __name__ == '__main__':
             print("version {}".format(__VERSION_STRING__))
             return 0
         
-        if args.baselineVersion:
+        if hasattr(args, 'baselineID'):
             action = 'baseline'
-            version = args.baselineVersion
-        elif args.baselineCurrent:
-            action = 'baseline'
-            version = pydbvolve.CURRENT_VERSION
-        elif args.upgradeVersion:
+            version = args.baselineVersion or pydbvolve.CURRENT_VERSION
+        elif hasattr(args, 'upgradeID'):
             action = 'upgrade'
-            version = args.upgradeVersion
-        elif args.upgradeLatest:
-            action = 'upgrade'
-            version = pydbvolve.LATEST_VERSION
-        elif args.downgradeVersion:
+            version = args.upgradeVersion or pydbvolve.LATEST_VERSION
+        elif hasattr(args, 'downgradeID'):
             action = 'downgrade'
-            version = args.downgradeVersion
-        elif args.downgradeBaseline:
-            action = 'downgrade'
-            version = pydbvolve.BASELINE_VERSION
-        elif args.getInfo:
+            version = args.downgradeVersion or pydbvolve.BASELINE_VERSION
+        elif hasattr(args, 'infoID'):
             action = 'info'
             version = pydbvolve.CURRENT_VERSION
         elif args.getBaselineInfo:
@@ -94,14 +86,19 @@ if __name__ == '__main__':
         elif args.migrationLog:
             action = 'log'
             version = 'all'
-        else: #args.verifyVersion:
+        elif hasattr(args, 'verifyID'):
             action = 'verify'
-            version = args.verifyVersion
+            version = args.verifyID or pydbvolve.CURRENT_VERSION
+        
+        if not action:
+			print("No action set", file=sys.stderr)
+			return 0
         
         sequential = args.sequential
         verbose = args.verbose
+        dry_run = args.dry_run
         
-        rc = pydbvolve.run_migration(args.configFileName, action, version, sequential, verbose, chatty=True)
+        rc = pydbvolve.run_migration(args.configFileName, action, version, sequential, verbose, dry_run, chatty=True)
         
         return rc
     # End main
