@@ -1,6 +1,7 @@
 # migrations
 
 import uuid
+import os
 import re
 import traceback
 import importlib
@@ -8,57 +9,13 @@ import importlib.machinery as ilmac
 import importlib.util as ilutil
 from datetime import datetime as dt
 from .global_settings import VALID_COLUMNS
-from .exceptions import MigrationError
+from .exceptions import *
 
 
-def get_migration_filename_info(config, fileName):
-    """
-    Returns a dict with information about the migration filename obtained by using the regex returned from get_filename_regex() call:
-    {
-        version: # version string
-        description: # description
-        filetype: # file type. Currently only '.sql' and '.py' filetypes are supported.
-        filename: input filename,
-        sort_version: form of the version string that is sortable (See get_sort_version())
-    }
-    If there is an error with the regex, None will be returned.
-    Regex output length should always return a list or tuple of length 3.
-    """
-    
-    keys = ['version', 'description', 'filetype']
-    # findall returns a list. The regex result (if found) will be a tuple
-    values = config['filename_regex'].findall(os.path.basename(fileName))
-    if values:
-        values = values[0]
-    if len(values) == len(keys):
-        info = dict(zip(keys, values))
-        info['filetype'] = info['filetype'].lower()
-        info['filename'] = fileName
-        info['sort_version'] = get_sort_version(config, info['version'])
-        return info
-    else:
-        return None
+def get_migration_filename(config, migration):
+    path = config['migration_upgrade_dir'] if config['migration_action'] == 'upgrade' else config['migration_downgrade_dir']
+    return os.path.join(path, migration['migration_file'])
 # End get_migration_filename_info
-
-
-def get_sort_version(config, version):
-    """
-    Returns a form of the version obtained from the execution of get_migration_filename_info() call that can be properly sorted.
-    """
-    
-    noAlpha = re.compile('[^0-9.]+')
-    return tuple(int(x) for x in noAlpha.sub('', version).split('.'))
-# End get_sort_version
-
-
-def sort_migrations(config, migrations, reverse=False):
-    """
-    Returns a sorted version of the migrations list
-    """
-    
-    migrations.sort(key=lambda x: x['sort_version'], reverse=reverse)
-    return migrations
-# End sort_migrations
 
 
 def get_baseline(config):
@@ -67,16 +24,17 @@ def get_baseline(config):
     """
     
     conn = config['conn']
+    write_log(config, "Getting baseline version")
     try:
-        write_log(config, "Getting baseline version")
         with conn.cursor() as cur:
             cur.execute("""select * from {}"{}" where is_baseline = 1 and is_active = 1""".format(config.get('migration_table_schema', ''), config['migration_table_name']))
             res = cur.fetchone()
-            if res is None:
-                res = {}
     except Exception as e:
         write_log(config, 'EXCEPTION:: getting baseline version {}'.format(e), level=logging.ERROR)
-        return {}
+        raise exception_code(e, 100)
+    else:
+        if res is None:
+            res = {}
     
     return res
 # End get_baseline
@@ -95,48 +53,15 @@ update {}"{}"
 """.format(config.get('migration_table_schema', ''), config['migration_table_name'])
     
     write_log(config, "Clearing baseline version")
-    with conn.cursor() as cur:
-        try:
-            cur.execute(sql)
-        except Exception as e:
-            write_log(config, "EXCEPTION:: reset of baseline flag failed! {}\n Stmt:\n{}".format(e, sql), level=logging.ERROR)
-            return False
-        else:
-            return True
-# End clear_baseline
-
-
-def get_version(config, version, exclude_baseline=True):
-    """
-    Return a dict corresponding to a specific version.   
-    """
-    
-    conn = config['conn']
     try:
-        write_log(config, "Getting migration record for version {}".format(version))
         with conn.cursor() as cur:
-            sql = """
-select * 
-  from {}"{}"
- where version = {}
-   {}
- order 
-    by applied_ts desc;
-""".format(config.get('migration_table_schema', ''), 
-           config['migration_table_name'],
-           config['positional_variable_marker'],
-           "and migration_action != 'baseline'" if exclude_baseline else '')
-            
-            cur.execute(sql, (version,))
-            res = cur.fetchone()
-            if res is None:
-                res = {}
+            cur.execute(sql)
     except Exception as e:
-        write_log(config, 'EXCEPTION:: getting version {}: {}'.format(version, e), level=logging.ERROR)
-        return {}
-
-    return res
-# End get_version
+        write_log(config, "EXCEPTION:: reset of baseline flag failed! {}\n Stmt:\n{}".format(e, sql), level=logging.ERROR)
+        raise exception_code(e, 100)
+    else:
+        return True
+# End clear_baseline
 
 
 def get_current(config):
@@ -146,18 +71,39 @@ def get_current(config):
     
     conn = config['conn']
     try:
-        write_log(config, "Getting current version")
+        write_log(config, "Getting current migration")
         with conn.cursor() as cur:
             cur.execute("""select * from {}"{}" where is_current = 1 and is_active = 1""".format(config.get('migration_table_schema', ''), config['migration_table_name']))
             res = cur.fetchone()
-            if res is None:
-                res = {}
     except Exception as e:
-        write_log(config, 'EXCEPTION:: getting current version {}'.format(e), level=logging.ERROR)
-        return {}
+        msg = 'EXCEPTION:: getting current migration {}'.format(e)
+        write_log(config, msg, level=logging.ERROR)
+        raise exception_code(e, 100)
+    else:
+        if res is None:
+            res = {}
     
     return res
 # End get_current
+
+
+def find_current(config):
+    conn = config['conn']
+    sql = """
+select * 
+  from {}"{}"
+ where requested_ts is not null
+   and applied_ts is not null
+ order 
+    by applied_ts desc;
+""".format(config.get('migration_table_schema', ''), config['migration_table_name'])
+    
+    withh conn.cursor() as cur:
+        cur.execute(sql)
+        res = cur.fetchone()
+    
+    return res
+# End find_curent
 
 
 def clear_current(config):
@@ -181,55 +127,47 @@ update {}"{}"
             return False
         else:
             return True
-# End clear_baseline
+# End clear_current
+
+
+def reset_current(config):
+    conn = config['conn']
+    sql = """
+update {}"{}"
+   set is_current = 1
+ where id = {};
+""".format(config.get('migration_table_schema', ''), config['migration_table_name'], config['positional_variable_marker'])
+    
+    clear_current(config)
+    rec = find_current(config)
+    if rec:
+        with conn.cursor() as cur:
+            cur.execute(sql, (rec['id'],))
+# End reset_current
 
 
 def lock_migration_table(config):
-	conn = config['conn']
-	stmt = config['lock_table_tmpl'].format(config['migration_table_name'])
-	with conn.cursor() as cur():
-		cur.execute(stmt)
+    conn = config['conn']
+    stmt = config['lock_table_tmpl'].format(config['migration_table_name'])
+    with conn.cursor() as cur():
+        cur.execute(stmt)
 # End lock_migration_table
 
 
-def get_max_migration_pk(config):
-	conn = config['conn']
-	stmt = """
-select max(id) as "max_id" from {};
-"""
-	res = None
-	with conn.cursor() as cur:
-		cur.execute(stmt)
-		res = cur.fetchone()
-		if res:
-			res = res['max_id']
-	
-	return res
-# End get_max_migration_pk
-
-
-def get_next_migration_pk(config):
-	max_pk = get_max_migration_pk(config) or 0
-	return max_pk + 1
-# End get_next_migration_pk
-
-
-def update_migration_record(config, migration, current=0, baseline=0, active=1):
-	"""
-	updates a migration record
-	"""
-	
-    if current == 1:
-        if not clear_current(config):
-            return False
-    if baseline == 1:
-        if not clear_baseline(config):
-            return False
-	
-	pos_var = config['positional_variable_marker']
-	
-	conn = config['conn']
-	sql = """
+def update_migration_record(config, migration):
+    """
+    updates a migration record
+    """
+    
+    if migration['is_current'] == 1:
+        clear_current(config)
+    if migration['is_baseline'] == 1:
+        clear_baseline(config)
+    
+    pos_var = config['positional_variable_marker']
+    
+    conn = config['conn']
+    sql = """
 update {}"{}"
    set {}
  where id = {};
@@ -242,8 +180,8 @@ update {}"{}"
     
     valuesd['is_current'] = current
     valuesd['is_baseline'] = baseline
-	valuesd['applied_ts'] = applied
-	valuesd['requested_ts'] = requested
+    valuesd['applied_ts'] = applied
+    valuesd['requested_ts'] = requested
     valuesd['migration_file'] = os.path.basename(migration.get('filename', ''))[:256]
     valuesd['migration_type'] = migration.get('filetype', '')
     valuesd['version'] = migration.get('version', config['version'])
@@ -251,11 +189,11 @@ update {}"{}"
     valuesd['id'] = migration.get('id')
     
     with conn.cursor() as cur:
-		cur.execute(sql, valuesd)
+        cur.execute(sql, valuesd)
 # End update_migration_record
 
 
-def add_migration_record(config, migration, current=0, baseline=0, active=1, requested=None, applied=None):
+def add_migration_record(config, migration, requested, current=0, baseline=0, active=1, applied=None):
     """
     Adds a migration record to the migrations table. 
     If it is a baseline record, the existing baseline will be unset. 
@@ -264,17 +202,21 @@ def add_migration_record(config, migration, current=0, baseline=0, active=1, req
     """
     
     if current == 1:
-        if not clear_current(config):
-            return False
+        clear_current(config)
     if baseline == 1:
-        if not clear_baseline(config):
-            return False
+        clear_baseline(config)
     if current == 0 and baseline == 0:
-        write_log(config, "ERROR:: The flags 'current' and 'baseline' cannot both be zero (0)", level=logging.ERROR)
-        return False
-    if not isinstance(requested, dt) and not isinstance(applied, dt):
-        write_log(config, "ERROR:: The requested and applied datetime cannot both be None", level=logging.ERROR)
-        return False
+        msg = "ERROR:: The flags 'current' and 'baseline' cannot both be zero (0)"
+        write_log(config, msg, level=logging.ERROR)
+        raise MigrationTableManagementError(msg)
+    if not isinstance(requested, dt):
+        msg = "ERROR:: The requested parameter must be a datetime"
+        write_log(config, msg, level=logging.ERROR)
+        raise MigrationTableManagementError(msg)
+    if not isinstance(applied, (dt, type(None)):
+        msg = "ERROR:: The applied parameter must be a datetime or None"
+        write_log(config, msg, level=logging.ERROR)
+        raise MigrationTableManagementError(msg)
         
     conn = config['conn']
     sql = """
@@ -293,13 +235,13 @@ values (
     
     valuesd['is_current'] = current
     valuesd['is_baseline'] = baseline
-	valuesd['applied_ts'] = applied
-	valuesd['requested_ts'] = requested
+    valuesd['applied_ts'] = applied
+    valuesd['requested_ts'] = requested
     valuesd['migration_file'] = os.path.basename(migration.get('filename', ''))[:256]
     valuesd['migration_type'] = migration.get('filetype', '')
     valuesd['version'] = migration.get('version', config['version'])
     valuesd['is_active'] = active
-    valuesd['id'] = get_next_migration_pk(config)
+    valuesd['id'] = get_migration_id(config)
     
     values = tuple(valuesd[c] for c in VALID_COLUMNS)
     
@@ -314,6 +256,25 @@ values (
 # End add_migration_record
 
 
+def create_migration(config, filename):
+    
+    
+    filename = os.path.basename(filename)
+    upfilepath = os.path.join(config['migration_upgrade_dir'], filename)
+    downfilepath = os.path.join(config['migration_downgrade_dir'], filename)
+    
+    if not os.path.exists(upfilepath):
+        open(upfilepath, 'w')
+    if not os.path.exists(downfilepath):
+        open(downfilepath, 'w')
+    
+    
+    
+
+
+
+
+
 def set_baseline(config):
     """
     Set a baseline record in the database. 
@@ -323,41 +284,6 @@ def set_baseline(config):
     """
     
     conn = config['conn']
-    try:
-        baseline = get_baseline(config)
-        if config['version'] == CURRENT_VERSION:
-            current = get_current(config)
-            if not (bool(current)):
-                write_log(config, "No current version is set. Have migrations been run?", level=logging.ERROR)
-                return 12
-            else:
-                config['version'] = current['version']
-        
-        if bool(baseline) and (baseline['version'] == config['version']):
-            msg = "Baseline version '{}' has already been set".format(config['version'])
-            if config.get('chatty'):
-                print(msg)
-            write_log(config, msg)
-            conn.rollback()
-            return 0    # Exit with no error
-        else:
-            msg = "Setting baseline at version {}".format(config['version'])
-            if config.get('chatty'):
-                print(msg)
-            write_log(config, msg)
-            current = get_current(config) # We don't want to overwrite an existing current record if we're retroactively baselining
-            addOK = add_migration_record(config, {}, baseline=1, current=(0 if bool(current) else 1))
-    except Exception as e:
-        write_log(config, "EXCEPTION:: set_baseline failed! {}".format(e), level=logging.ERROR)
-        conn.rollback()
-        return 10
-    
-    if addOK:
-        conn.commit()
-        return 0
-    else:
-        conn.rollback()
-        return 11
 # End set_baseline
 
 
@@ -367,61 +293,62 @@ def generate_migration_table_sql(config):
     sql = """
 create table {0}"{1}"
 (
-	id               integer primary key     -- 'nuff said?
-    migration_id     varchar(256) not null,  -- version string
+    id               varchar(75) primary key -- 'nuff said?
     requested_ts     {2} not null,           -- time version was successfully applied
-    applied_ts       {2} not null,           -- time version was successfully applied
+    applied_ts       {2},                    -- time version was successfully applied
     migration_file   varchar(256) not null,  -- file name of migration run
-    migration_action varchar(256) not null,  -- 'upgrade', 'downgrade', etc
+    migration_action varchar(256) not null,  -- 'upgrade', 'downgrade', 'quueued', etc
     migration_type   varchar(256) not null,  -- 'python', 'sql', ...
     migration_description varchar(256),
     migration_user   varchar(256) not null,  -- name of user running migration program
     db_user          varchar(256) not null,  -- name of database user applying sql statements
+    is_current       integer not null,       -- flag to denote current version (for convenience)
     is_baseline      integer not null,       -- flag for baseline version
     is_active        integer not null        -- flag for active migration or not
 );
 """.format(schema, tableName, config['timestamp_type'])
     
-	return sql
+    return sql
 # End generate_migration_table_sql
 
 
 def generate_migration_table_index_sql(config):
     schema = config.get('migration_table_schema', '')
     tableName = config['migration_table_name']
-	
+    
     indexes = [
         """create unique index ux01__migrations__ on {}"{}" (version, applied_ts);""".format(schema, tableName),
         """create unique index ux02__migrations__ on {}"{}" (version, requested_ts);""".format(schema, tableName),
         """create index ix01__migrations__ on {}"{}" (is_current);""".format(schema, tableName),
         """create index ix02__migrations__ on {}"{}" (is_baseline);""".format(schema, tableName)
     ]
-	
-	return indexes
+    
+    return indexes
 # End generate_migration_table_index_sql
 
 
 def drop_migration_table(config):
-	with config['conn'].cursor() as cur:
-		cur.execute('drop table {}"{}";'.format(config.get('migration_table_schema', ''), 
-		                                        config['migration_table_name']))
+    with config['conn'].cursor() as cur:
+        cur.execute('drop table {}"{}";'.format(config.get('migration_table_schema', ''), 
+                                                config['migration_table_name']))
 # End drop_migration_table
 
 
 def export_migration_table(config):
-	export_file_name = config['migration_id']
-	config['_export_ts'] = dt.now()
-	if 'migration_table_schema' not in config:
-		config['migration_table_schema'] = ''
-	
-	with open(export_file_name, 'w') as exp_file:
-		print('-- export migration table\nUser: {migration_user}\nDate: {_export_ts}\n\n '\
-		      'drop table {migration_table_schema}"{migration_table_name}"{sql_statement_seq}\n'.format(**config), file=exp_file)
-		print(generate_migration_table_sql(config), file=exp_file)
-		for ix in generate_migration_table_index_sql(config):
-			print(ix, file=exp_file)
-		
-		
+    export_file_name = config['migration_id']
+    config['_export_ts'] = dt.now()
+    if 'migration_table_schema' not in config:
+        config['migration_table_schema'] = ''
+    
+    with open(export_file_name, 'w') as exp_file:
+        print('-- export migration table\nUser: {migration_user}\nDate: {_export_ts}\n\n '\
+              'drop table {migration_table_schema}"{migration_table_name}"{sql_statement_seq}\n'.format(**config), file=exp_file)
+        print(generate_migration_table_sql(config), file=exp_file)
+        for ix in generate_migration_table_index_sql(config):
+            print(ix, file=exp_file)
+        
+        
+    
 
 
 def create_migration_table(config):
@@ -471,6 +398,75 @@ def import_any(fileName, modName):
 # End import_any
 
 
+def get_migration_record(config, mig_id):
+    conn = config['conn']
+    sql = """
+select * from {}"{}" where id = {};
+""".format(config.get('migration_table_schema', ''), config['migration_table_name'], config['positional_variable_marker'])
+    
+    with conn.cursor() as cur:
+        cur.execute(sql, (mig_id,))
+        res = cur.fetchone()
+    
+    return res
+# End get_migration_record
+
+
+def get_migration_record_using_file(config, filename):
+    conn = config['conn']
+    filename = os.path.basename(filename)
+    
+    sql = """
+select * 
+  from {}"{}"
+ where requested_ts is not null
+   and is_active = 1
+   and migration_file = {};
+""".format(config.get('migration_table_schema', ''), config['migration_table_name'], config['positional_variable_marker'])
+    
+    with conn.cursor() as cur:
+        cur.execute(sql, (filename,))
+        res = cur.fetchall()
+    
+    if len(res) == 0:
+        return None
+    elif len(res) == 1:
+        return res[0]
+    else:
+        msg = "There are multiple files in the migration log table that have the same name and are active. "\
+              "There should be at most only 1 active record with a given file name"
+        raise MigrationTableManagementError(msg)
+# End get_migration_record_using_file
+
+
+def resolve_file_and_id(config):
+    try:
+        mig_id = uuid.UUID(str(config['file_or_id']))
+    except:
+        config['migration_file'] = config['file_or_id']
+        config['migration_id'] = get_mig_id_from_file(config)
+    else:
+        rec = get_migration_record(config, str(mig_id))
+        if rec:
+            config['migration_id'] = rec['id']
+            config['migration_file'] = rec['migration_file']
+        else:
+            rec = get_migration_record_using_file(config, config['file_or_id'])
+            if rec:
+                config['migration_id'] = rec['id']
+                config['migration_file'] = rec['migration_file']
+            else:
+                config['migration_id'] = None
+                config['migration_file'] = config['file_or_id']
+# End resolve_file_and_id
+
+
+def verify_file_type(config):
+    if not config['migration_file'].lower().endswith('.py') and not config['migration_file'].lower().endswith('.sql'):
+        raise MigrationFileTypeError("Only SQL (.sql) or Python3 ('.py') files can be processed")
+# End verify_file_type
+    
+
 def display_version_info(version_info, legend):
     """
     Pretty-prints the dict for the migration record of the current version.
@@ -489,67 +485,17 @@ def get_info(config):
     Gets and displays the migration record for the current version
     """
 
-    baselineVersion = get_baseline(config)
-
-    if config['version'] == CURRENT_VERSION:
-        write_log(config, "Running Get Info for current version")
-        currentVersion = get_current(config)
-        if currentVersion:
-            if baselineVersion  and (currentVersion['version'] == baselineVersion['version']):
-                currentVersion['is_baseline'] = 1
-
-            display_version_info(currentVersion, "Current version:")
-        else:
-            write_log(config, "No current version information. Migrations may not have been run yet.", level=logging.WARNING)
-    elif config['version'] == BASELINE_VERSION:
-        write_log(config, "Running Get Info for baseline version")
-        if baselineVersion:
-            actualVersion = get_version(config, baselineVersion['version'])
-            if actualVersion:
-                baselineVersion['migration_file'] = actualVersion['migration_file']
-                baselineVersion['migration_action'] = actualVersion['migration_action'] 
-                baselineVersion['migration_type'] = actualVersion['migration_type']
-                baselineVersion['is_current'] = actualVersion['is_current']
-            
-            display_version_info(baselineVersion, "Baseline version:")
-        else:
-            write_log(config, "No baeline version information. Migrations baseline may not have been set yet.",
-                      level=logging.WARNING)
-    else:
-        version = get_version(config, config['version'])
-        if not version:
-            version = get_version(config, config['version'], exclude_baseline=False)
-        if not version:
-            write_log(config, "No version information can be found for {}.".format(config['version']),
-                      level=logging.WARNING)
-        else:
-            display_version_info(version, "Version information:")
-            
-
-    return 0
+    pass
 # End get_info
 
 
-def verify_version(config):
+def verify_migration(config):
     """
     Action function. Returns int (zero (0) is success). 
     Gets the migration record for the current version and compares the version string against the target version string.
     """
     
     write_log(config, "Running Verify Version = {}".format(config['version']))
-    
-    currentVersion = get_current(config)
-    if currentVersion:
-        if currentVersion['version'] == config['version']:
-            rc = 0
-        else:
-            write_log(config, "Version mismatch! Current = {}; Target = {}.".format(currentVersion['version'], config['version']))
-            rc = 50
-    else:
-        write_log(config, "No current version information. Migrations baseline may not have been set yet.", level=logging.ERROR)
-        rc = 51
-    
-    return rc
 # End get_info
 
 
@@ -662,11 +608,16 @@ def get_migration_data(config):
     """
     
     conn = config['conn']
+    sql = """
+select * 
+  from {}"{}" 
+ order 
+    by coalesce(applied_ts, requested_ts);
+""".format(config.get('migration_table_schema', ''), 
+           config['migration_table_name'])
     
     try:
         with conn.cursor() as cur:
-            sql = """select * from {}{} order by applied_ts;""".format(config.get('migration_table_schema', ''), 
-                                                                            config['migration_table_name'])
             cur.execute(sql)
             res = cur.fetchall()
     except Exception as e:
@@ -687,19 +638,17 @@ def migration_log(config):
     """
     
     data = get_migration_data(config)
-    if data is None:
-        return 60
-    elif len(data) == 0:
+    if not data:
         write_log(config, "No migration data is available")
     else:
         output_migration_data(config, data)
     
-    return 0
+    return NO_ERROR
 # End dump_migrations
 
 
 def get_unapplied_migrations(config):
-	pass
+    pass
 # End get_unapplied_migrations
 
 
@@ -890,276 +839,19 @@ def get_migrations(config):
     
     conn = config['conn']
     if config['migration_action'] == 'upgrade':
-		sql = """
-select * from {}"{}" where requested_ts is not null and applied_ts is null and is_active = 1 order by requested_ts;
+        sql = """
+select * from {}"{}" where applied_ts is null and is_active = 1 order by requested_ts;
 """.format(config['migration_table_schema'], config['migration_table_name'])
-	else:
-		sql = """
-select * from {}"{}" where requested_ts is null and applied_ts is not null and is_active = 1 order by applied_ts desc;
+    else:
+        sql = """
+select * from {}"{}" where applied_ts is not null and is_active = 1 order by applied_ts desc;
 """.format(config['migration_table_schema'], config['migration_table_name'])
-	
-	with conn.cursor() as cur:
-		cur.execute(sql)
-		migrations = cur.fetchall()
+    
+    with conn.cursor() as cur:
+        cur.execute(sql)
+        migrations = cur.fetchall()
     
     return migrations
 # End get_migrations
 
-
-def setup_migrations(config):
-    """
-    Returns list
-    Gets the migration file names, creates migration dicts from the filenames, and sorts them by version.
-    See get_migration_filename_info().
-    """
-    
-    migrations = get_migrations(config)
-    
-    if len(migrations) > 0:
-        # info-ize them
-        migrations = [get_migration_filename_info(config, fn) for fn in migrations]
-        # and sort 'em
-        migrations = sort_migrations(config, migrations)
-
-    return migrations
-# End setup_migrations
-
-
-def find_migration_file_version(config, migrations, version, prior=False):
-    """
-    Returns int (or None on failure)
-    Finds the target migration version by its version string (not sortable version) in the list of migrations
-    """
-    
-    # find target
-    ix = None
-    for ix, m in enumerate(migrations):
-        if m['version'] == version:
-            return ix
-    
-    if prior:
-        return ix
-    
-    return None
-# End find_migration_file_version
-
-
-def run_upgrade(config):
-    """
-    Action function. Returns int. This return code will be forwarded to the shell.
-    Handles action necessary to run an upgrade migration. Each migration script is run in its own transaction. 
-    After each script completes, a migration record is added for the migration script and the transaction is committed.
-    """
-    
-    conn = config['conn']
-    targetVersion = config['version']
-    
-    write_log(config, "Running Upgrade Migrations")
-    
-    currentVersion = get_current(config)
-    baselineVersion = get_baseline(config)
-    conn.rollback() # Clear any potential open transactions
-    
-    if baselineVersion:
-        baselineVersion['sort_version'] = get_sort_version(config, baselineVersion['version'])
-    
-    migrations = setup_migrations(config)
-    if not migrations:
-        write_log(config, 'There are no upgrade migration files.')
-        return 29
-    
-    if config['version'] == LATEST_VERSION:
-        targetIx = len(migrations) - 1
-        targetVersion = migrations[targetIx]['version']
-        # Special case check here in case the local files are out-of-sync with the db
-        if currentVersion and (get_sort_version(config, targetVersion) < get_sort_version(config, currentVersion['version'])):
-            msg = "The database is currently at version {} which is ahead of your latest " \
-                  "migration file version {}. Changes will not be made. Your migrations " \
-                  "are out-of-sync.".format(currentVersion['version'], targetVersion)
-            write_log(config, msg, level=logging.WARNING)
-            
-            # Exit on no error as if it was a current/target match
-            # Yes, I know this is different than when you specify a version directly
-            return 0 
-    else:
-        targetIx = find_migration_file_version(config, migrations, targetVersion)
-    
-    if targetIx is None:
-        write_log(config, "ERROR:: Could not find target migration version '{}'".format(config['version']), level=logging.ERROR)
-        return 20
-    
-    if config.get('sequential', True) and currentVersion:
-        startIx = find_migration_file_version(config, migrations, currentVersion['version'])
-        if startIx is None:
-            # This could happen if the files don't match the db.
-            # set it like a force
-            write_log(config, "WARNING: Migration file versions are out of sync with the database migration table. This migration will be forced.")
-            startIx = targetIx
-        elif startIx == targetIx: # Sanity check!
-            msg = "INFO: Database schema is already at this version (current = {}; target = {})".format(currentVersion['version'], targetVersion)
-            if config.get('chatty'):
-                print(msg)
-            write_log(config, msg)
-            return 0
-        else:
-            # since we've found where we currently are, we need to inc by 1 to get the "real" starting point
-            startIx += 1
-    elif config.get('sequential', True): # Handle edge case of baseline not set
-        startIx = 0
-    else:
-        startIx = targetIx
-    
-    if startIx > targetIx:
-        write_log(config, "ERROR:: When migrating to an earlier version, you must use --downgrade (current = {}; target = {})".format(currentVersion['version'], targetVersion), level=logging.ERROR)
-        return 21
-    
-    if baselineVersion and (migrations[targetIx]['sort_version'] < baselineVersion['sort_version']):
-        write_log(config, "ERROR:: The target version is behind the baseline version (target = {}; baseline = {})".format(targetVersion, baselineVersion['version']), level=logging.ERROR)
-        return 22
-    
-    if baselineVersion and (migrations[startIx]['sort_version'] < baselineVersion['sort_version']):
-        write_log(config, "ERROR:: The starting version is behind the baseline version (current = {}; baseline = {})".format(migrations[startIx]['version'], baselineVersion['version']), level=logging.ERROR)
-        return 22
-    
-    try:
-        rc = run_migration_job(config, migrations, startIx, targetIx, 1)
-    except Exception as e:
-        write_log(config, "EXCEPTION {}:: running migration job: {}".format(type(e).__name__, e), level=logging.ERROR)
-        return 23
-    else:
-        if not rc:
-            return 24
-
-    currentVersion = get_current(config)
-    if currentVersion:
-        msg = "Current database version is: {}".format(currentVersion['version'])
-        if config.get('chatty'):
-            print(msg)
-        write_log(config, msg)
-
-    return 0
-# End run_upgrade
-
-
-def run_downgrade(config):
-    """
-    Action function. Returns int. This return code will be forwarded to the shell.
-    Handles action necessary to run a downgrade migration. Each migration script is run in its own transaction. 
-    After each script completes, a migration record is added for the migration script and the transaction is committed.
-    """
-    
-    conn = config['conn']
-    
-    write_log(config, "Running Downgrade Migrations")
-    
-    currentVersion = get_current(config)
-    baselineVersion = get_baseline(config)
-    conn.rollback() # Clear any potential open transactions
-    targetVersion = config['version']
-    
-    if not currentVersion:
-        write_log(config, "No current version. Nothing to downgrade from.", level=logging.WARNING)
-        return 30
-    
-    migrations = setup_migrations(config)
-    if not migrations:
-        write_log(config, 'There are no downgrade migration files.')
-        return 39
-    
-    if baselineVersion:
-        baselineVersion['sort_version'] = get_sort_version(config, baselineVersion['version'])
-    
-    if config['version'] == BASELINE_VERSION:
-        if not baselineVersion:
-            write_log(config, 
-                      "ERROR:: Cannot downgrade to baseline because no baseline has been set.")
-            return 30
-        
-        targetIx = find_migration_file_version(config, migrations, baselineVersion['version'])
-        targetVersion = baselineVersion['version']
-        if targetIx is None:
-            write_log(config, 
-                      "Could not find baseline version {} file! Your migration files are out-of-sync with the database".format(targetVersion),
-                      level=logging.ERROR)
-            return 31
-        elif currentVersion and (get_sort_version(config, baselineVersion['version']) >= get_sort_version(config, currentVersion['version'])):
-            msg = "Your current version {} is below the recorded baseline version. " \
-                  "Cannot downgrade without resetting baseline.".format(currentVersion['version'], baselineVersion['version'])
-            write_log(config, msg, level=logging.WARNING)
-            
-            # This may not be an error if pydbvolve is being used in distributed development
-            # Give the benefit of the doubt here.
-            return 0
-    else:
-        targetIx = find_migration_file_version(config, migrations, targetVersion)
-    
-    if targetIx is None:
-        write_log(config, "ERROR:: Could not find target migration version '{}'".format(config['version']), level=logging.ERROR)
-        return 31
-    
-    if config.get('sequential', True) and currentVersion:
-        startIx = find_migration_file_version(config, migrations, currentVersion['version'])
-        if startIx is None:
-            startIx = find_migration_file_version(config, migrations, currentVersion['version'], prior=True)
-            if startIx is not None:
-                startIx += 1    # This will allow the decrement to put us where we want to be
-        
-        if startIx is None:
-            startIx = targetIx
-        elif startIx == targetIx: # Sanity check!
-            msg = "INFO: Database schema is already at this version (current = {}; target = {})".format(currentVersion['version'], targetVersion)
-            if config.get('chatty'):
-                print(msg)
-            write_log(config, msg)
-            return 0
-        else:
-            # since we've found where we currently are, we need to inc by 1 to get the "real" starting point
-            startIx -= 1
-    elif not currentVersion:
-        write_log(config, "No upgrades have been run. Downgrade not possible.", level=logging.WARNING)
-        return 0
-    else:
-        startIx = targetIx
-    
-    if startIx < targetIx:
-        write_log(config, "ERROR:: When migrating to a later version, you must use --upgrade (current = {}; target = {})".format(currentVersion['version'], config['version']), level=logging.ERROR)
-        return 32
-    
-    if baselineVersion and (migrations[targetIx]['sort_version'] < baselineVersion['sort_version']):
-        write_log(config, "ERROR:: The target version is behind the baseline version (target = {}; baseline = {})".format(config['version'], baselineVersion['version']), level=logging.ERROR)
-        return 33
-    
-    if baselineVersion and (migrations[startIx]['sort_version'] < baselineVersion['sort_version']):
-        write_log(config, "ERROR:: The starting version is behind the baseline version (current = {}; baseline = {})".format(migrations[startIx]['version'], baselineVersion['version']), level=logging.ERROR)
-        return 34
-    
-    try:
-        rc = run_migration_job(config, migrations, startIx, targetIx, -1)
-    except Exception as e:
-        write_log(config, "EXCEPTION {}:: running migration job: {}".format(type(e).__name__, e), level=logging.ERROR)
-        return 35
-    else:
-        if not rc:
-            return 36
-
-    currentVersion = get_current(config)
-    if currentVersion:
-        msg = "Current database version is: {}".format(currentVersion['version'])
-        if config.get('chatty'):
-            print(msg)
-        write_log(config, msg)
-
-    return 0
-# End run_downgrade
-
-
-def create_migration_id(config):
-	return uuid.uuid4()
-# End create_migration_id
-
-
-def create_migration(config):
-	migration_id = create_migration_id(config)
-	
-# End create_migration
 

@@ -116,14 +116,14 @@ def get_timestamp_datatype_name():
 
 
 def get_table_lock_statement_template():
-	"""
-	Returns the table lock statement to use to control access to the migration log/driver table. 
-	Default is (must use '{}' as a table placeholder) "lock table {} in access exclusive mode nowait;"
-	This is used to prevent multiple pydbvolve calls running at the same time.
-	override this function to 
-	"""
-	
-	return "lock table {} in access exclusive mode nowait;"
+    """
+    Returns the table lock statement to use to control access to the migration log/driver table. 
+    Default is (must use '{}' as a table placeholder) "lock table {} in access exclusive mode nowait;"
+    This is used to prevent multiple pydbvolve calls running at the same time.
+    override this function to 
+    """
+    
+    return "lock table {} in access exclusive mode nowait;"
 
 
 def get_db_credentials(config):
@@ -149,17 +149,6 @@ def get_db_connection(config, credentials):
     
     raise NotImplementedError("You must implement a function named 'get_db_connection' in your config file.")
 # End get_db_connection    
-
-
-def get_filename_regex():
-    """
-    Returns a regex instance (re.compile() result) that will be used to parse the filenames 
-    to get version, description, and type information (in that exact order).
-    Overide this function in your config file to set a custom regex.
-    """
-    
-    return re.compile('^([^_]+)_([^.]+).(sql|py)$')
-# End get_file_regex
 
 
 def get_sql_statement_sep():
@@ -191,7 +180,6 @@ def run_config(config):
         'migration_downgrade_dir': get_migration_downgrade_dir(migration_dir),
         'log_dir': get_log_dir(base_dir),
         'migration_table_schema': schema,
-        'filename_regex': get_filename_regex(),
         'migration_table_name': get_migration_table_name(),
         'positional_variable_marker': get_positional_variable_marker(),
         'timestamp_type': get_timestamp_datatype_name(),
@@ -214,7 +202,7 @@ def confirm_dirs(config):
 # End confirm_dirs
 
 
-def load_config(configFileName):
+def load_config_file(configFileName):
     """
     Load and execute the config Python file.
     """

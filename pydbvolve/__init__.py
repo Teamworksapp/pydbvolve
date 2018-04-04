@@ -23,7 +23,7 @@ from .migration_funcs import *
 from .exceptions import *
 
 
-def initialize(configFileName, action, version, sequential=True, dry_run=False, verbose=False, chatty=False):
+def initialize(config_file_name, action, file_or_id, sequential=True, dry_run=False, verbose=False, chatty=False):
     """
     Perform all initializations for pydbvolve:
         Load config file
@@ -34,18 +34,18 @@ def initialize(configFileName, action, version, sequential=True, dry_run=False, 
         Get DB connection
     """
     
-    write_log({}, "Loading config code from '{}'".format(configFileName))
-    load_config(configFileName)
+    write_log({}, "Loading config code from '{}'".format(config_file_name))
+    load_config_file(config_file_name)
     
     config = new_config()
     config.update({'migration_action': action, 
-                   'version': version,
+                   'file_or_id': file_of_id,
                    'migration_user': get_migration_user(config),
                    'sequential': sequential,
                    'dry_run': dry_run,
                    'verbose': verbose,
                    'chatty': chatty,
-                   'config_file_path': os.path.abspath(configFileName)})
+                   'config_file_path': os.path.abspath(config_file_name)})
     
     # get_config calls the config setup functions that may be overridden by the config code
     run_config(config)
@@ -82,7 +82,7 @@ def initialize(configFileName, action, version, sequential=True, dry_run=False, 
 # End initialize
 
 
-def run_migration(configFileName, action, version, sequential=True, dry_run=False, verbose=False, chatty=False):
+def run_migration(config_file_name, action, file_or_id, dry_run=False, verbose=False, chatty=False):
     """
     Main handler function for pydbvolve. 
     If you intend to import pydbvolve into a larger project, this is the function that should serve as the entry point.
@@ -93,11 +93,11 @@ def run_migration(configFileName, action, version, sequential=True, dry_run=Fals
         Execute action function
     """
     
-    if not os.access(configFileName, os.F_OK | os.R_OK):
-        write_log({}, "Config file '{}' does not exist or cannot be read.".format(configFileName), level=logging.ERROR)
+    if not os.access(config_file_name, os.F_OK | os.R_OK):
+        write_log({}, "Config file '{}' does not exist or cannot be read.".format(config_file_name), level=logging.ERROR)
         return 1
     
-    config = initialize(configFileName, action, version, sequential, dry_run, verbose, chatty)
+    config = initialize(config_file_name, action, file_or_id, sequential, dry_run, verbose, chatty)
     if not config:
         write_log({}, "Error creating config dict. Script cannot run.", level=logging.ERROR)
         return 2
@@ -123,6 +123,12 @@ def run_migration(configFileName, action, version, sequential=True, dry_run=Fals
         action = migration_log
     elif action == 'verify':
         action = verify_version
+    elif action == 'create':
+        action = create_migration
+    elif action == 'delete':
+        action = delete_migration
+    elif action == 'touch':
+        action = touch_migration
     else:
         write_log(config, "Unknown action {}. Exiting.".format(action), level=logging.ERROR)
         return 5
@@ -141,26 +147,26 @@ def run_migration(configFileName, action, version, sequential=True, dry_run=Fals
     try:
         pre_execution(config)
     except Exception as e:
-        write_log(config, "EXCEPTION performing pre-execution", level=logging.ERROR)
+        write_log(config, "EXCEPTION performing pre-execution: {}".format(e), level=logging.ERROR)
         if config.get('verbose', False):
             traceback.print_exc(file=sys.stderr)
-        rc = 7
+        rc = getattr(e, 'exc_code', -1)
     else:
         try:
             rc = action(config)
         except Exception as e:
-            write_log(config, "Error performing action {}".format(action.__name__), level=logging.ERROR)
+            write_log(config, "Error performing action {}: {}".format(action.__name__, e), level=logging.ERROR)
             if config.get('verbose', False):
                 traceback.print_exc(file=sys.stderr)
-            rc = 8
+            rc = getattr(e, 'exc_code', -1)
         else:
             try:
                 post_execution(config)
             except Exception as e:
-                write_log(config, "EXCEPTION performing post-execution", level=logging.ERROR)
+                write_log(config, "EXCEPTION performing post-execution: {}".format(e), level=logging.ERROR)
                 if config.get('verbose', False):
                     traceback.print_exc(file=sys.stderr)
-                rc = 9
+                rc = getattr(e, 'exc_code', -1)
         finally:
             if config.get('conn'):
                 write_log(config, "Closing database connection")

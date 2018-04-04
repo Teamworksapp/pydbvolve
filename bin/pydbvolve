@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-__VERSION__ = (1, 0, 2)
+__VERSION__ = (2, 0, 0)
 __VERSION_STRING__ = '.'.join(str(v) for v in __VERSION__)
 
 
@@ -22,8 +22,7 @@ if __name__ == '__main__':
         description += "Only SQL (.sql) and Python (.py) migration scripts are supported."
         
         parser = argparse.ArgumentParser(description=description)
-        parser.add_argument("--config",             dest="configFileName",    metavar="CONF_FILE",  required=True,  help="Config code file")
-        parser.add_argument("--force",              dest="sequential",        action="store_false",                 help="Apply version directly (no sequential iteration through versions)", default=True)
+        parser.add_argument("--config",             dest="config_file_name",    metavar="CONF_FILE",  required=True,  help="Config code file")
         parser.add_argument("--verbose",            dest="verbose",           action="store_true",                  help="Verbose mode (Echo log to screen; Show tracebacks.)", default=False)
         parser.add_argument("--libversion",         dest="libversion",        action="store_true",                  help="Print the library version and exit", default=False)
         parser.add_argument("--version",            dest="version",           action="store_true",                  help="Print the main script version and exit", default=False)
@@ -31,90 +30,93 @@ if __name__ == '__main__':
         mgroup = parser.add_mutually_exclusive_group(required=True)
         mgroup.add_argument("--baseline",           dest="baselineID",        metavar="BASE_ID",   nargs='?',       help="Set baseline version in migration table", default=argparse.SUPPRESS)
         mgroup.add_argument("--upgrade",            dest="upgradeID",         metavar="UP_ID",     nargs='?',       help="Sequential upgrade to version", default=argparse.SUPPRESS)
+        mgroup.add_argument("--apply",              dest="applyID",           metavar="APPLY_ID",                   help="Sequential upgrade to version")
         mgroup.add_argument("--downgrade",          dest="downgradeID",       metavar="DOWN_ID",   nargs='?',       help="Sequential downgrade to version", default=argparse.SUPPRESS)
         mgroup.add_argument("--info",               dest="infoID",            metavar="INFO_ID",   nargs='?',       help="Get the current version information", default=argparse.SUPPRESS)
         mgroup.add_argument("--baseline-info",      dest="getBaselineInfo",   action="store_true",                  help="Get the baseline version information", default=False)
         mgroup.add_argument("--migration-log",      dest="migrationLog",      action="store_true",                  help="Output migration log from database.", default=False)
-        mgroup.add_argument("--verify",             dest="verifyID",          metavar="VERIFY_ID"  nargs='?',       help="Verify the schema is at specified version")
+        mgroup.add_argument("--verify",             dest="verifyID",          metavar="VERIFY_ID"  nargs='?',       help="Verify the schema is at specified version", default=argparse.SUPPRESS)
         mgroup.add_argument("--create",             dest="create",            metavar="FILE_NAME", nargs='?',       help="Create a new migration file. Specify file as <file>.sql or <file>.py", default=argmarse.SUPPRESS)
         mgroup.add_argument("--delete",             dest="delete",            metavar="DEL_ID",                     help="Delete an unapplied migration")
+        mgroup.add_argument("--touch",              dest="touch",             metavar="TOUCH_ID",                   help="Delete an unapplied migration")
         mgroup.add_argument("--export-log",         dest="export",            metavar="LOG_FILE_NAME",              help="Export migration log as sql to file")
+        mgroup.add_argument("--pending",            dest="pending",           action="store_true",                  help="Show pending work but do not process", default=False)
         
         return parser
     # End init_args
-
-
-    def main():
-        """Main function for command-line execution."""
+    
+    
+    def handle_args():
+        parsed_args = {}
         parser = init_args()
-        try:
-            if '--libversion' in sys.argv:
-                print("pydbovlve module version {}".format(pydbvolve.__VERSION_STRING__))
-                return 0
-            
-            if '--version' in sys.argv:
-                print("version {}".format(__VERSION_STRING__))
-                return 0
-                
-            args = parser.parse_args()
-        except:
-            return -1
         
-        if args.libversion:
+        if '--libversion' in sys.argv:
             print("pydbovlve module version {}".format(pydbvolve.__VERSION_STRING__))
-            return 0
+            raise pydbvolve.EmergencyCleanExit()
         
-        if args.version:
+        if '--version' in sys.argv:
             print("version {}".format(__VERSION_STRING__))
-            return 0
+            raise pydbvolve.EmergencyCleanExit()
+            
+        args = parser.parse_args()
         
         if hasattr(args, 'baselineID'):
-            action = 'baseline'
-            version = args.baselineVersion or pydbvolve.CURRENT_VERSION
+            parsed_args['action'] = 'baseline'
+            parsed_args['file_or_id'] = args.baselineID
         elif hasattr(args, 'upgradeID'):
-            action = 'upgrade'
-            version = args.upgradeVersion or pydbvolve.LATEST_VERSION
+            parsed_args['action'] = 'upgrade'
+            parsed_args['file_or_id'] = args.upgradeID
+        elif args.applyID:
+            parsed_args['action'] = 'apply'
+            parsed_args['file_or_id'] = args.applyID
+        elif args.touchID:
+            parsed_args['action'] = 'touch'
+            parsed_args['file_or_id'] = args.touchID
         elif hasattr(args, 'downgradeID'):
-            action = 'downgrade'
-            version = args.downgradeVersion or pydbvolve.BASELINE_VERSION
+            parsed_args['action'] = 'downgrade'
+            parsed_args['file_or_id'] = args.downgradeID
         elif hasattr(args, 'infoID'):
-            action = 'info'
-            version = pydbvolve.CURRENT_VERSION
+            parsed_args['action'] = 'info'
+            parsed_args['file_or_id'] = infoID
+        elif args.pending:
+            parsed_args['action'] = 'pending'
+            parsed_args['file_or_id'] = None
         elif args.getBaselineInfo:
-            action = 'info'
-            version = pydbvolve.BASELINE_VERSION
+            parsed_args['action'] = 'baseline_info'
+            parsed_args['file_or_id'] = None
         elif args.migrationLog:
-            action = 'log'
-            version = 'all'
+            parsed_args['action'] = 'log'
+            parsed_args['file_or_id'] = None
         elif hasattr(args, 'verifyID'):
-            action = 'verify'
-            version = args.verifyID or pydbvolve.CURRENT_VERSION
+            parsed_args['action'] = 'verify'
+            parsed_args['file_or_id'] = args.verifyID
         
         if not action:
-			print("No action set", file=sys.stderr)
-			return 0
+            raise pydbvolve.MigrationArgumentError("No action set")
         
-        sequential = args.sequential
-        verbose = args.verbose
-        dry_run = args.dry_run
+        parsed_args['verbose'] = args.verbose
+        parsed_args['dry_run'] = args.dry_run
+        parsed_args['config_file_name'] = args.configFileName
         
-        rc = pydbvolve.run_migration(args.configFileName, action, version, sequential, verbose, dry_run, chatty=True)
-        
-        return rc
-    # End main
+        return parsed_args
+    # End handle_args
+    
     
     # Execute!
+    rc = 0
+    
     try:
-        rc = main()
-        if rc != 0:
-            print("Exiting with {}".format(rc), file=sys.stderr)
-        else:
-            print("Done.")
-        
-        sys.exit(rc)
+        parsed_args = handle_args()
+        parsed_args['chatty'] = True  # Helpful at the moment to leave this set
+        pydbvolve.run_migration(**parsed_args)
     except Exception as e:
-        print("ERROR:: Unhandled excaption {}: {}".format(type(e).__name__, e), file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        sys.exit(254)
+        rc = getattr(e, 'code', -1)
+        if rc != 0:
+            print("ERROR:: {}: {}".format(e), file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+    else:
+        print("Done.")
+    finally:
+        sys.exit(rc)
 
 
