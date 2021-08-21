@@ -138,6 +138,7 @@ def test_11_log_file(capsys):
         assert(s.name == 's')
         assert(len(s.handlers) == 1)
         assert(len(f.handlers) >= 1)
+        s.handlers = []
 # End test_11_log_file
 
 
